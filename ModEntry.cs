@@ -17,6 +17,8 @@ public sealed class ModEntry : Mod
     private readonly PerScreen<bool> textHudActive = new(() => true);
     private readonly PerScreen<HudRenderer> renderer = new(() => new HudRenderer());
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
+    private readonly PerScreen<Pelicom> pelicom = new(() => new Pelicom(Instance.config,
+        () => Instance.UsePelicom, Instance.OnPelicomDrawFailed));
     private ModConfig config = null!;
     private bool patchInstalled;
     private bool toolbarPatchInstalled;
@@ -89,11 +91,18 @@ public sealed class ModEntry : Mod
         }
 
         helper.Events.Input.ButtonPressed += OnButtonPressed;
+        helper.Events.GameLoop.UpdateTicked += (_, _) =>
+        {
+            // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
+            if (patchInstalled && config.Enabled && Context.IsWorldReady && !Game1.onScreenMenus.Contains(pelicom.Value))
+                Game1.onScreenMenus.Add(pelicom.Value);
+        };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
             textHudActive.ResetAllScreens();
             renderer.ResetAllScreens();
             toolbarRenderer.ResetAllScreens();
+            pelicom.ResetAllScreens();
         };
     }
 
@@ -114,6 +123,14 @@ public sealed class ModEntry : Mod
     }
 
     private bool UseCompactToolbar => toolbarPatchInstalled && config.Enabled && textHudActive.Value && Context.IsWorldReady;
+
+    private bool UsePelicom => patchInstalled && config.Enabled && textHudActive.Value && Context.IsWorldReady;
+
+    private void OnPelicomDrawFailed(Exception ex)
+    {
+        textHudActive.Value = false;
+        Monitor.Log($"Pelicom failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
+    }
 
     private bool UseTextVitals => vitalsPatchInstalled && UseCompactToolbar && Game1.activeClickableMenu == null
         && Game1.onScreenMenus.OfType<Toolbar>().Any();
@@ -200,7 +217,7 @@ public sealed class ModEntry : Mod
 
         try
         {
-            mod.renderer.Value.Draw(b, __instance, mod.config);
+            mod.renderer.Value.Draw(b, __instance, mod.config, mod.pelicom.Value.IsVisible ? Pelicom.StripWidth + 8 : 0);
             return false;
         }
         catch (Exception ex)

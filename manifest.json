@@ -1,8 +1,8 @@
 {
   "Name": "Agraria OS",
   "Author": "Toz",
-  "Version": "0.1.5",
-  "Description": "A compact StardEVE text HUD and flat toolbar.",
+  "Version": "0.1.7",
+  "Description": "A compact StardEVE text HUD, flat toolbar and Pelicom taskstrip.",
   "UniqueID": "Toz.AgrariaOS",
   "EntryDll": "AgrariaOS.dll",
   "MinimumApiVersion": "4.4.0"

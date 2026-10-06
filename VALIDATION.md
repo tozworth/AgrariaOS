@@ -1,5 +1,21 @@
 # Prototype validation
 
+## 0.1.7 update
+
+Enlarged Pelicom to a 35px rail with 35px slots and crisp 27px icons (3x native sprites). Dashboard through Mail stay at the top; Notifications and Exit anchor eight pixels above the viewport bottom, with an inset one-pixel separator eight pixels above their group. Hover labels follow the actual top/bottom slot positions, and short viewports skip overlapping top entries. HUD spacing follows the wider rail automatically; no-op clicks and F8 remain intact.
+
+Built, packaged and installed while the game was closed with zero warnings and errors. Installed DLL hash matches the release output and config.json is unchanged. In-game appearance, bottom anchoring after resizing/UI scaling, and hover labels remain to be checked on the next user launch.
+
+## 0.1.6 update
+
+Added Pelicom: a 26px-wide dark rail flush with the left UI viewport edge, with eight 18px chat emoji icons arranged from the top in the requested order: dashboard (107), inventory (152), livestock (74), mining ledger (121), wallet (41), mail (144), notifications (151), exit (131). Hovering highlights a slot and displays its label; left/right clicks are silent no-ops, including Exit. Native on-screen menu dispatch consumes rail clicks before world actions. The text HUD reserves an eight-pixel gap beside the rail.
+
+Pelicom uses per-screen state, the existing HUD toggle/config, vanilla HUD visibility and event/menu guards. Its geometry follows the UI viewport and is cached from drawing; window resizing discards stale hit bounds. It reuses the game's emoji texture and PointClamp UI batch without adding assets or changing rendering state.
+
+Verified sprite coordinates, on-screen menu rendering/input callers, UI mouse coordinates and visibility guards against installed Stardew Valley 1.6.15 / SMAPI 4.5.2 using local ILSpy output. Built, packaged and installed with zero warnings and errors while the game was closed. Installed DLL hash matches the release output; config.json is unchanged. The archive contains only the mod DLL, manifest and license. No game was launched or save loaded.
+
+Startup and in-game visual/input checks remain for the next user launch: icon order/appearance, hover labels, no-op clicks without world actions, HUD spacing, F8, event/menu hiding, resizing, UI scaling and split-screen.
+
 ## 0.1.5 update
 
 The compact toolbar is now always centered at the bottom, flush with the UI viewport's bottom edge. Player position and the vanilla pin setting no longer move it; no external bottom margin remains. Health/energy text follows the toolbar above its right edge. Cached click geometry, configured pinned fading and F8 vanilla restoration are preserved.

@@ -15,7 +15,7 @@ internal sealed class HudRenderer
     private string dateAndTime = "";
     private string conditionsAndMoney = "";
 
-    public void Draw(SpriteBatch batch, DayTimeMoneyBox clock, ModConfig config)
+    public void Draw(SpriteBatch batch, DayTimeMoneyBox clock, ModConfig config, int leftInset)
     {
         GameLocation location = Game1.currentLocation;
         string phase = Game1.isDarkOut(location) ? "NIGHT" : Game1.isStartingToGetDarkOut(location) ? "DUSK" : "DAY";
@@ -53,7 +53,7 @@ internal sealed class HudRenderer
             width = Math.Max(width, (font.MeasureString(locationText).X + font.MeasureString(securityText).X) * scale);
 
         int lineCount = (config.ShowLocation ? 1 : 0) + 2 + (Game1.player.hasVisibleQuests || Game1.options.zoomButtons ? 1 : 0);
-        float x = MathF.Floor(Math.Clamp(config.X, 0, Math.Max(0, Game1.uiViewport.Width - width - 8)));
+        float x = MathF.Floor(Math.Clamp(Math.Max(config.X, leftInset), 0, Math.Max(0, Game1.uiViewport.Width - width - 8)));
         float y = MathF.Floor(Math.Clamp(config.Y, 0, Math.Max(0, Game1.uiViewport.Height - lineCount * lineHeight - 8)));
         if (config.ShowLocation)
         {
