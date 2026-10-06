@@ -1,0 +1,13 @@
+# Local build products and release packages
+.artifacts/
+bin/
+obj/
+dist/
+
+# Editor state and machine-specific settings
+.vs/
+.idea/
+*.user
+*.suo
+stardewvalley.targets
+config.json
