@@ -1,41 +1,19 @@
+using AgrariaOS.Desktop;
 using System.Reflection.Emit;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
-using StardewModdingAPI.Events;
-using StardewModdingAPI.Utilities;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Menus;
 
 namespace AgrariaOS;
 
-public sealed class ModEntry : Mod
+public sealed partial class ModEntry
 {
-    private static ModEntry Instance = null!;
-    private readonly PerScreen<bool> textHudActive = new(() => true);
-    private readonly PerScreen<HudRenderer> renderer = new(() => new HudRenderer());
-    private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
-    private readonly PerScreen<Pelicom> pelicom = new(() => new Pelicom(Instance.config,
-        () => Instance.UsePelicom, Instance.OnPelicomDrawFailed, () => Instance.windowManager.Value.OpenMail(),
-        () => Instance.windowManager.Value.IsMinimized(MailWindow.WindowId),
-        () => Instance.windowManager.Value.OpenInventory(),
-        () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId)));
-    private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
-        () => Instance.pelicom.Value.IsVisible, Instance.OnWindowDrawFailed));
-    private ModConfig config = null!;
-    private bool patchInstalled;
-    private bool toolbarPatchInstalled;
-    private bool vitalsPatchInstalled;
-
-    public override void Entry(IModHelper helper)
+    private void InstallHudPatches()
     {
-        Instance = this;
-        config = helper.ReadConfig<ModConfig>();
-        config.Normalize();
-        helper.WriteConfig(config);
-
         try
         {
             // Replacing this one menu's drawing preserves vanilla HUD visibility and UI scaling.
@@ -94,86 +72,7 @@ public sealed class ModEntry : Mod
                 Monitor.Log($"Couldn't replace the health/energy bars; keeping the vanilla bars.\n{ex}", LogLevel.Error);
             }
         }
-
-        helper.Events.Input.ButtonPressed += OnButtonPressed;
-        helper.Events.Input.MouseWheelScrolled += (_, e) =>
-        {
-            Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-            if (UsePelicom && windowManager.Value.ReceiveScroll(cursor, e.Delta))
-                helper.Input.SuppressScrollWheel();
-        };
-        helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch);
-        helper.Events.Display.WindowResized += (_, _) => windowManager.Value.InvalidateLayout();
-        helper.Events.GameLoop.UpdateTicked += (_, _) =>
-        {
-            // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
-            if (patchInstalled && config.Enabled && Context.IsWorldReady && !Game1.onScreenMenus.Contains(pelicom.Value))
-                Game1.onScreenMenus.Add(pelicom.Value);
-            windowManager.Value.Update(helper.Input);
-        };
-        helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
-        {
-            textHudActive.ResetAllScreens();
-            renderer.ResetAllScreens();
-            toolbarRenderer.ResetAllScreens();
-            pelicom.ResetAllScreens();
-            windowManager.ResetAllScreens();
-        };
     }
-
-    private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
-    {
-        if (UsePelicom && !e.IsSuppressed() && e.Button is SButton.MouseLeft or SButton.MouseRight)
-        {
-            Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-            bool leftClick = e.Button == SButton.MouseLeft;
-            if (windowManager.Value.ReceiveClick(cursor, leftClick))
-            {
-                Helper.Input.Suppress(e.Button);
-                return;
-            }
-            if (!Game1.IsChatting && pelicom.Value.isWithinBounds(cursor.X, cursor.Y))
-            {
-                if (leftClick)
-                    pelicom.Value.receiveLeftClick(cursor.X, cursor.Y);
-                Helper.Input.Suppress(e.Button);
-                return;
-            }
-        }
-
-        if (!patchInstalled || !config.Enabled || !Context.IsWorldReady || !Context.IsPlayerFree || e.Button != config.ToggleKey)
-            return;
-
-        textHudActive.Value = !textHudActive.Value;
-        windowManager.Value.InvalidateLayout();
-        Helper.Input.Suppress(e.Button);
-        // Restore click targets before the next input update, including while the HUD is hidden.
-        foreach (Toolbar toolbar in Game1.onScreenMenus.OfType<Toolbar>())
-        {
-            if (!UseCompactToolbar)
-                toolbarRenderer.Value.RestoreLayout(toolbar);
-        }
-        Monitor.Log(textHudActive.Value ? "Agraria OS HUD enabled." : "Vanilla HUD enabled.", LogLevel.Info);
-    }
-
-    private bool UseCompactToolbar => toolbarPatchInstalled && config.Enabled && textHudActive.Value && Context.IsWorldReady;
-
-    private bool UsePelicom => patchInstalled && config.Enabled && textHudActive.Value && Context.IsWorldReady;
-
-    private void OnPelicomDrawFailed(Exception ex)
-    {
-        textHudActive.Value = false;
-        Monitor.Log($"Pelicom failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
-    }
-
-    private void OnWindowDrawFailed(Exception ex)
-    {
-        textHudActive.Value = false;
-        Monitor.Log($"Window drawing failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
-    }
-
-    private bool UseTextVitals => vitalsPatchInstalled && UseCompactToolbar && Game1.activeClickableMenu == null
-        && Game1.onScreenMenus.OfType<Toolbar>().Any();
 
     private static IEnumerable<CodeInstruction> DrawHudTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
     {

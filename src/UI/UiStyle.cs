@@ -3,9 +3,9 @@ using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
 using StardewValley.Menus;
 
-namespace AgrariaOS;
+namespace AgrariaOS.UI;
 
-internal static class PelicomStyle
+internal static class UiStyle
 {
     internal static readonly Color Background = new(38, 38, 38);
     internal static readonly Color Border = new(78, 78, 78);

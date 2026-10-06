@@ -3,7 +3,7 @@ using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Locations;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Hud;
 
 /// <summary>Entirely fictional CONCORD jurisdiction. Changes no game mechanics.</summary>
 internal static class SecurityStatus

@@ -3,6 +3,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Version>0.1.11</Version>
     <EnableHarmony>true</EnableHarmony>
     <EnableModDeploy>false</EnableModDeploy>
@@ -11,6 +12,7 @@
     <ModZipPath>$(MSBuildProjectDirectory)/dist</ModZipPath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="src/**/*.cs" />
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
     <None Update="LICENSE" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

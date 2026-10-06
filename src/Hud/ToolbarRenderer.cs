@@ -1,9 +1,10 @@
+using AgrariaOS.Configuration;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
 using StardewValley.Menus;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Hud;
 
 internal sealed class ToolbarRenderer
 {

@@ -1,6 +1,6 @@
 using StardewModdingAPI;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Configuration;
 
 public sealed class ModConfig
 {

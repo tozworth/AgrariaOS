@@ -1,10 +1,12 @@
+using AgrariaOS.Configuration;
+using AgrariaOS.UI;
 using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
 using StardewValley.Menus;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Hud;
 
 internal sealed class HudRenderer
 {
@@ -57,14 +59,14 @@ internal sealed class HudRenderer
         float y = MathF.Floor(Math.Clamp(config.Y, 0, Math.Max(0, Game1.uiViewport.Height - lineCount * lineHeight - 8)));
         if (config.ShowLocation)
         {
-            DrawText(batch, locationText, new Vector2(x, y), SecondaryColor, config);
+            UiText.Draw(batch, locationText, new Vector2(x, y), SecondaryColor, config);
             if (config.ShowSecurity)
-                DrawText(batch, securityText, new Vector2(x + MathF.Ceiling(font.MeasureString(locationText).X * scale), y), SecurityStatus.GetColor(security), config);
+                UiText.Draw(batch, securityText, new Vector2(x + MathF.Ceiling(font.MeasureString(locationText).X * scale), y), SecurityStatus.GetColor(security), config);
             y += lineHeight;
         }
-        DrawText(batch, dateAndTime, new Vector2(x, y), Game1.timeOfDay >= 2400 ? WarningColor : PrimaryColor, config);
+        UiText.Draw(batch, dateAndTime, new Vector2(x, y), Game1.timeOfDay >= 2400 ? WarningColor : PrimaryColor, config);
         y += lineHeight;
-        DrawText(batch, conditionsAndMoney, new Vector2(x, y), PrimaryColor, config);
+        UiText.Draw(batch, conditionsAndMoney, new Vector2(x, y), PrimaryColor, config);
         y += lineHeight;
 
         // Keep vanilla journal/zoom actions, with hit boxes attached to their visible text.
@@ -92,19 +94,8 @@ internal sealed class HudRenderer
         Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
         var bounds = new Rectangle((int)position.X - 2, (int)position.Y - 2, (int)Math.Ceiling(size.X) + 4, (int)Math.Ceiling(size.Y) + 4);
         Color color = bounds.Contains(Game1.getMouseX(), Game1.getMouseY()) ? PrimaryColor : SecondaryColor;
-        DrawText(batch, text, position, color, config);
+        UiText.Draw(batch, text, position, color, config);
         return bounds;
-    }
-
-    internal static void DrawText(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config)
-    {
-        position = new Vector2(MathF.Round(position.X), MathF.Round(position.Y));
-        // Whole font scales and pixel-aligned positions avoid resampling the bitmap glyphs.
-        // The game's HUD batch already uses PointClamp; don't restart or alter its shared batch.
-        batch.DrawString(Game1.smallFont, text, position + new Vector2(1, 1), Color.Black * (config.Opacity * 0.8f), 0,
-            Vector2.Zero, config.FontScale, SpriteEffects.None, 0.9f);
-        batch.DrawString(Game1.smallFont, text, position, color * config.Opacity, 0,
-            Vector2.Zero, config.FontScale, SpriteEffects.None, 0.91f);
     }
 
     internal static string FormatTime(int gameTime, bool use24HourClock)

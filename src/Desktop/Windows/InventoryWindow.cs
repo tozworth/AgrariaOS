@@ -1,3 +1,5 @@
+using AgrariaOS.Configuration;
+using AgrariaOS.UI;
 using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -5,7 +7,7 @@ using StardewValley;
 using StardewValley.Objects;
 using StardewValley.Tools;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Desktop.Windows;
 
 internal sealed class InventoryWindow : OsWindow
 {
@@ -34,7 +36,7 @@ internal sealed class InventoryWindow : OsWindow
 
     internal override string Id => WindowId;
     internal override string Title => "Inventory";
-    internal override int Icon => PelicomStyle.InventoryIcon;
+    internal override int Icon => UiStyle.InventoryIcon;
     internal override Point DefaultSize => new(600, 420);
     private int MaxFirstRow => Math.Max(0, items.Count - visibleRows);
 
@@ -55,7 +57,7 @@ internal sealed class InventoryWindow : OsWindow
             rowsBounds = scrollTrack = scrollThumb = Rectangle.Empty;
             visibleRows = 0;
             EndContentDrag();
-            DrawCellText(batch, "Not enough space.", contentBounds, PelicomStyle.Muted, config);
+            DrawCellText(batch, "Not enough space.", contentBounds, UiStyle.Muted, config);
             return;
         }
         int tableWidth = Math.Max(0, contentBounds.Width - Padding * 2 - ScrollbarWidth);
@@ -82,19 +84,19 @@ internal sealed class InventoryWindow : OsWindow
 
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
         foreach (Rectangle header in headers)
-            batch.Draw(Game1.staminaRect, header, PelicomStyle.Border * (config.Opacity * 0.45f));
+            batch.Draw(Game1.staminaRect, header, UiStyle.Border * (config.Opacity * 0.45f));
         for (int i = 0; i < headers.Length; i++)
         {
-            DrawCellText(batch, Headings[i], headers[i], PelicomStyle.Primary, config, rightAligned: i is 1 or 3);
+            DrawCellText(batch, Headings[i], headers[i], UiStyle.Primary, config, rightAligned: i is 1 or 3);
             if (i < headers.Length - 1)
             {
                 Rectangle divider = new(headers[i].Right - 1, headers[i].Y, 1, rowHeight + 1 + rowsBounds.Height);
-                batch.Draw(Game1.staminaRect, divider, PelicomStyle.Border * config.Opacity);
+                batch.Draw(Game1.staminaRect, divider, UiStyle.Border * config.Opacity);
                 if (resizingColumn == i || DividerBounds(i).Contains(cursor))
-                    batch.Draw(Game1.staminaRect, new Rectangle(divider.X, divider.Y, 2, rowHeight), PelicomStyle.Primary * config.Opacity);
+                    batch.Draw(Game1.staminaRect, new Rectangle(divider.X, divider.Y, 2, rowHeight), UiStyle.Primary * config.Opacity);
             }
         }
-        batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Y - 1, tableWidth, 1), PelicomStyle.Border * config.Opacity);
+        batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Y - 1, tableWidth, 1), UiStyle.Border * config.Opacity);
 
         bool knowsPrices = Game1.player.stats.Get("Book_PriceCatalogue") != 0;
         int endRow = Math.Min(items.Count, firstRow + visibleRows);
@@ -103,7 +105,7 @@ internal sealed class InventoryWindow : OsWindow
             Item item = items[i];
             Rectangle row = new(rowsBounds.X, rowsBounds.Y + (i - firstRow) * rowHeight, tableWidth, rowHeight);
             if (row.Contains(cursor))
-                batch.Draw(Game1.staminaRect, row, PelicomStyle.Border * (config.Opacity * 0.55f));
+                batch.Draw(Game1.staminaRect, row, UiStyle.Border * (config.Opacity * 0.55f));
             else if ((i & 1) != 0)
                 batch.Draw(Game1.staminaRect, row, Color.White * (config.Opacity * 0.025f));
 
@@ -111,25 +113,25 @@ internal sealed class InventoryWindow : OsWindow
             DrawItemIcon(batch, item, new Rectangle(name.X + Padding, row.Y + (row.Height - IconSize) / 2, IconSize, IconSize), config.Opacity);
             name.X += IconSize + Padding;
             name.Width -= IconSize + Padding;
-            DrawCellText(batch, item.DisplayName, name, PelicomStyle.Primary, config);
-            DrawCellText(batch, item.Stack.ToString(CultureInfo.InvariantCulture), CellBounds(1, row), PelicomStyle.Primary, config, rightAligned: true);
-            DrawCellText(batch, item.getCategoryName(), CellBounds(2, row), PelicomStyle.Muted, config);
-            DrawCellText(batch, GetValueText(item, knowsPrices), CellBounds(3, row), PelicomStyle.Primary, config, rightAligned: true);
+            DrawCellText(batch, item.DisplayName, name, UiStyle.Primary, config);
+            DrawCellText(batch, item.Stack.ToString(CultureInfo.InvariantCulture), CellBounds(1, row), UiStyle.Primary, config, rightAligned: true);
+            DrawCellText(batch, item.getCategoryName(), CellBounds(2, row), UiStyle.Muted, config);
+            DrawCellText(batch, GetValueText(item, knowsPrices), CellBounds(3, row), UiStyle.Primary, config, rightAligned: true);
         }
 
         if (items.Count == 0)
-            DrawCenteredText(batch, "Backpack empty.", rowsBounds, PelicomStyle.Muted, config);
+            DrawCenteredText(batch, "Backpack empty.", rowsBounds, UiStyle.Muted, config);
         if (!scrollThumb.IsEmpty)
         {
-            batch.Draw(Game1.staminaRect, scrollTrack, PelicomStyle.Border * (config.Opacity * 0.45f));
-            batch.Draw(Game1.staminaRect, scrollThumb, PelicomStyle.Muted * config.Opacity);
+            batch.Draw(Game1.staminaRect, scrollTrack, UiStyle.Border * (config.Opacity * 0.45f));
+            batch.Draw(Game1.staminaRect, scrollThumb, UiStyle.Muted * config.Opacity);
         }
 
         Rectangle footer = new(rowsBounds.X, contentBounds.Bottom - Padding - rowHeight, tableWidth, rowHeight);
         string summary = $"{items.Count} / {Game1.player.MaxItems} slots";
         if (MaxFirstRow > 0 && visibleRows > 0)
             summary += $"   |   {firstRow + 1}-{endRow} of {items.Count}";
-        DrawCellText(batch, summary, footer, PelicomStyle.Muted, config);
+        DrawCellText(batch, summary, footer, UiStyle.Muted, config);
     }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick)
@@ -248,7 +250,7 @@ internal sealed class InventoryWindow : OsWindow
         if (size.Y + 1 > cell.Height)
             return;
         float x = rightAligned ? cell.Right - Padding - 1 - size.X : cell.X + Padding;
-        HudRenderer.DrawText(batch, fitted, new Vector2(x, cell.Y + (cell.Height - size.Y) / 2), color, config);
+        UiText.Draw(batch, fitted, new Vector2(x, cell.Y + (cell.Height - size.Y) / 2), color, config);
     }
 
     private static string FitText(string text, int width, float scale)

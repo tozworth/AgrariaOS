@@ -1,10 +1,12 @@
+using AgrariaOS.Configuration;
+using AgrariaOS.UI;
 using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
 using StardewValley.Menus;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Hud;
 
 internal static class VitalsRenderer
 {
@@ -39,11 +41,11 @@ internal static class VitalsRenderer
         Texture2D icons = ChatBox.emojiTexture ?? Game1.content.Load<Texture2D>("LooseSprites\\emojis");
         DrawIcon(batch, icons, 43, position, height, iconScale, config.Opacity);
         position.X += iconWidth + IconGap;
-        HudRenderer.DrawText(batch, health, position, GetColor(player.health, player.maxHealth), config);
+        UiText.Draw(batch, health, position, GetColor(player.health, player.maxHealth), config);
         position.X += healthWidth + StatGap;
         DrawIcon(batch, icons, 102, position, height, iconScale, config.Opacity);
         position.X += iconWidth + IconGap;
-        HudRenderer.DrawText(batch, energy, position, GetColor(player.Stamina, player.MaxStamina), config);
+        UiText.Draw(batch, energy, position, GetColor(player.Stamina, player.MaxStamina), config);
     }
 
     private static void DrawIcon(SpriteBatch batch, Texture2D texture, int index, Vector2 position, int height,

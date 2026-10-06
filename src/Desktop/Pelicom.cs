@@ -1,9 +1,11 @@
+using AgrariaOS.Configuration;
+using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
 using StardewValley.Menus;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Desktop;
 
 internal sealed class Pelicom : IClickableMenu
 {
@@ -18,11 +20,11 @@ internal sealed class Pelicom : IClickableMenu
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Dashboard"),
-        (PelicomStyle.InventoryIcon, "Inventory"),
+        (UiStyle.InventoryIcon, "Inventory"),
         (74, "Livestock"),
         (121, "Mining Ledger"),
         (41, "Wallet"),
-        (PelicomStyle.MailIcon, "Mail"),
+        (UiStyle.MailIcon, "Mail"),
         (151, "Notifications"),
         (131, "Exit")
     };
@@ -102,10 +104,10 @@ internal sealed class Pelicom : IClickableMenu
         int separatorY = bottomGroupY - TopPadding;
 
         // Reuse the game's PointClamp UI batch and sprites; never change shared render state.
-        batch.Draw(Game1.staminaRect, strip, PelicomStyle.Background * config.Opacity);
-        batch.Draw(Game1.staminaRect, new Rectangle(StripWidth - 1, 0, 1, strip.Height), PelicomStyle.Border * config.Opacity);
+        batch.Draw(Game1.staminaRect, strip, UiStyle.Background * config.Opacity);
+        batch.Draw(Game1.staminaRect, new Rectangle(StripWidth - 1, 0, 1, strip.Height), UiStyle.Border * config.Opacity);
         if (separatorY >= 0)
-            batch.Draw(Game1.staminaRect, new Rectangle(4, separatorY, StripWidth - 8, 1), PelicomStyle.Border * config.Opacity);
+            batch.Draw(Game1.staminaRect, new Rectangle(4, separatorY, StripWidth - 8, 1), UiStyle.Border * config.Opacity);
         for (int i = 0; i < Entries.Length; i++)
         {
             bool isBottomEntry = i >= Entries.Length - BottomEntryCount;
@@ -121,13 +123,13 @@ internal sealed class Pelicom : IClickableMenu
             {
                 hovered = i;
                 hoveredY = slot.Y;
-                batch.Draw(Game1.staminaRect, slot, PelicomStyle.Border * config.Opacity);
+                batch.Draw(Game1.staminaRect, slot, UiStyle.Border * config.Opacity);
             }
 
             Point position = new((StripWidth - IconSize * IconScale) / 2, slot.Y + (SlotHeight - IconSize * IconScale) / 2);
-            PelicomStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
+            UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
             if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized()))
-                batch.Draw(Game1.staminaRect, new Rectangle(1, slot.Y + 8, 1, SlotHeight - 16), PelicomStyle.Muted * config.Opacity);
+                batch.Draw(Game1.staminaRect, new Rectangle(1, slot.Y + 8, 1, SlotHeight - 16), UiStyle.Muted * config.Opacity);
         }
 
         if (hovered >= 0)
@@ -137,8 +139,8 @@ internal sealed class Pelicom : IClickableMenu
             int y = Math.Clamp(hoveredY + (SlotHeight - (int)MathF.Ceiling(size.Y)) / 2,
                 0, Math.Max(0, strip.Height - (int)MathF.Ceiling(size.Y) - 4));
             Rectangle tooltip = new(StripWidth + 4, y, (int)MathF.Ceiling(size.X) + 12, (int)MathF.Ceiling(size.Y) + 4);
-            batch.Draw(Game1.staminaRect, tooltip, PelicomStyle.Background * config.Opacity);
-            HudRenderer.DrawText(batch, label, new Vector2(tooltip.X + 6, tooltip.Y + 2), Color.White, config);
+            batch.Draw(Game1.staminaRect, tooltip, UiStyle.Background * config.Opacity);
+            UiText.Draw(batch, label, new Vector2(tooltip.X + 6, tooltip.Y + 2), Color.White, config);
         }
 
         drawnBounds = strip;

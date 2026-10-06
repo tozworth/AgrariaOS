@@ -1,9 +1,11 @@
+using AgrariaOS.Configuration;
+using AgrariaOS.Desktop.Windows;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Desktop;
 
 internal sealed class WindowManager
 {

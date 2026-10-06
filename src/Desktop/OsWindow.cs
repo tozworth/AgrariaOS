@@ -1,8 +1,10 @@
+using AgrariaOS.Configuration;
+using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
 
-namespace AgrariaOS;
+namespace AgrariaOS.Desktop;
 
 // Window instances live until closed. Minimizing preserves their content and position.
 internal abstract class OsWindow
@@ -46,14 +48,14 @@ internal abstract class OsWindow
 
     internal void Draw(SpriteBatch batch, ModConfig config, Point cursor)
     {
-        batch.Draw(Game1.staminaRect, Bounds, PelicomStyle.Background * config.Opacity);
-        PelicomStyle.DrawBorder(batch, Bounds, config.Opacity);
+        batch.Draw(Game1.staminaRect, Bounds, UiStyle.Background * config.Opacity);
+        UiStyle.DrawBorder(batch, Bounds, config.Opacity);
         batch.Draw(Game1.staminaRect, new Rectangle(Bounds.X + 1, Bounds.Y + TitleHeight, Bounds.Width - 2, 1),
-            PelicomStyle.Border * config.Opacity);
+            UiStyle.Border * config.Opacity);
 
         const int iconSize = 18;
-        PelicomStyle.DrawIcon(batch, Icon, new Point(Bounds.X + 6, Bounds.Y + (TitleHeight - iconSize) / 2), 2, config.Opacity);
-        DrawCenteredText(batch, Title, TitleBounds, PelicomStyle.Primary, config);
+        UiStyle.DrawIcon(batch, Icon, new Point(Bounds.X + 6, Bounds.Y + (TitleHeight - iconSize) / 2), 2, config.Opacity);
+        DrawCenteredText(batch, Title, TitleBounds, UiStyle.Primary, config);
         DrawButton(batch, MinimizeBounds, cursor, config, close: false);
         DrawButton(batch, CloseBounds, cursor, config, close: true);
         DrawContent(batch, new Rectangle(Bounds.X + 1, Bounds.Y + TitleHeight + 1,
@@ -65,19 +67,19 @@ internal abstract class OsWindow
     protected static void DrawCenteredText(SpriteBatch batch, string text, Rectangle bounds, Color color, ModConfig config)
     {
         Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
-        HudRenderer.DrawText(batch, text, new Vector2(bounds.X + (bounds.Width - size.X) / 2,
+        UiText.Draw(batch, text, new Vector2(bounds.X + (bounds.Width - size.X) / 2,
             bounds.Y + (bounds.Height - size.Y) / 2), color, config);
     }
 
     private static void DrawButton(SpriteBatch batch, Rectangle bounds, Point cursor, ModConfig config, bool close)
     {
         if (bounds.Contains(cursor))
-            batch.Draw(Game1.staminaRect, bounds, PelicomStyle.Border * config.Opacity);
+            batch.Draw(Game1.staminaRect, bounds, UiStyle.Border * config.Opacity);
 
         // Whole-pixel symbols keep these small controls independent of font scaling.
         int x = bounds.Center.X - 4;
         int y = bounds.Center.Y - 4;
-        Color color = PelicomStyle.Primary * config.Opacity;
+        Color color = UiStyle.Primary * config.Opacity;
         if (close)
         {
             for (int i = 0; i < 9; i++)
