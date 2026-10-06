@@ -1,5 +1,23 @@
 # Prototype validation
 
+## 0.1.11 update
+
+The user's in-game screenshot of 0.1.10 confirmed two inventory rendering failures: missing column/row text and incorrect tool icons, while ordinary object sprites appeared correctly. The row height used Stardew's reduced LineSpacing (28), but the installed English font measures `Name` at 34 pixels high. The resulting 30px cells caused DrawCellText's height guard to skip every label. Rows now reserve the font's maximum single-line glyph height, active line spacing and text shadow; the maximum glyph height is cached per font instance. Tool icons now use the registry's default sprite instead of the legacy ParentSheetIndex, matching Tool.drawInMenu. Object instance sprite indices and colored overlays are retained; weapons use GetDrawnItemId to preserve their forged appearance.
+
+Verified SpriteFont.MeasureString, the game's font spacing override, Tool.drawInMenu and MeleeWeapon.drawInMenu against local installed DLLs with ILSpy. The ignored assembly check reads only metadata from all 11 installed SmallFont XNBs and confirms all single-line glyphs and representative headings/item names/counts/value/footer text fit at five font scales. Six tool types use default registry sprite indices; object indices remain intact. The existing Mail/inventory lifecycle, 105 column resize cases, held input, scrolling and price checks also pass. This verifies code and actual font metrics without a graphics device; in-game appearance of the corrected build remains for the next user launch.
+
+Built, packaged and installed 0.1.11 while the game was closed, with zero warnings or errors. The installed DLL matches the release output and config.json is unchanged. No game was launched or save loaded.
+
+## 0.1.10 update
+
+Pelicom's Inventory entry now opens a per-screen desktop window using the shared drag/minimize/restore/close lifecycle and minimized rail marker. The compact backpack sheet lists occupied slots in their existing order without combining or moving stacks. It updates from the current player's inventory while drawing, with small registry sprites (including colored overlays and quality badges), Name/Qty/Category/Value columns, bounded text, alternating rows, hover highlighting and a slot count. Header dividers resize adjacent columns horizontally with minimum widths and fixed ordering. Wheel scrolling and a draggable scrollbar reach the remaining rows; scrolling over a desktop window suppresses vanilla toolbar scrolling. Minimize retains column widths, position and scroll state; close/reopen resets them.
+
+Verified installed Stardew Valley 1.6.15 / SMAPI 4.5.2 signatures and behavior with local ILSpy. Value follows IClickableMenu.drawHoverText's Price Catalogue branch: requires the book power, excludes furniture/clothing/wallpaper/big craftables and items protected from death loss, and uses sellToStorePrice(-1L) times the stack. Zero or unavailable prices remain blank. Stack multiplication uses a long to avoid integer overflow. Registry sprites are fitted directly to their cells so vanilla recipe/usage overlays cannot spill outside the sheet, without changing the shared SpriteBatch.
+
+The ignored assembly check passed the existing Mail lifecycle/drag checks, 105 column resize/minimum/release cases, content dragging through real SMAPI suppression at UI scales 0.75/1/1.25/1.5, wheel/thumb limits, top-window wheel routing, real SMAPI scroll suppression, catalogue unlock/type/death-loss/zero/stack-value cases, and Inventory minimize/restore/close. These are isolated code checks; no game was launched or save loaded. In-game appearance, live inventory changes, item sprites, divider/scrollbar interaction, F8/menu/event hiding and split-screen isolation remain for the next user launch.
+
+Built, packaged and installed while the game was closed, with zero warnings or errors. Project and manifest versions both read 0.1.10. The installed DLL matches the release output and config.json is unchanged. The release archive contains only the mod DLL, manifest and license.
+
 ## 0.1.9 update
 
 Fixed title-strip dragging. SMAPI carries mouse suppression across ticks by reporting the held button as released to game input. The previous ButtonReleased handler ended the drag on that synthetic release, and IsDown alone also stopped tracking on the following tick. Window updates now treat IsDown or IsSuppressed as held; SMAPI clears suppression when the physical button is released. Removed the ButtonReleased handler so synthetic releases no longer cancel dragging. Existing visibility/resize cancellation and minimize/close behavior remain intact.

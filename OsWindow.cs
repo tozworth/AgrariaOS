@@ -39,6 +39,11 @@ internal abstract class OsWindow
 
     internal void MoveTo(Point origin) => position = origin;
 
+    internal virtual void ReceiveContentClick(Point cursor, bool leftClick) { }
+    internal virtual void DragContent(Point cursor) { }
+    internal virtual void EndContentDrag() { }
+    internal virtual void ReceiveScroll(int delta) { }
+
     internal void Draw(SpriteBatch batch, ModConfig config, Point cursor)
     {
         batch.Draw(Game1.staminaRect, Bounds, PelicomStyle.Background * config.Opacity);

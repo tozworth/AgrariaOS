@@ -12,6 +12,7 @@ internal static class PelicomStyle
     internal static readonly Color Primary = new(226, 233, 239);
     internal static readonly Color Muted = new(150, 150, 150);
     internal const int MailIcon = 144;
+    internal const int InventoryIcon = 152;
 
     internal static void DrawIcon(SpriteBatch batch, int index, Point position, int scale, float opacity)
     {

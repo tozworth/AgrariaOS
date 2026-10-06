@@ -14,10 +14,11 @@ internal sealed class Pelicom : IClickableMenu
     private const int IconSize = 9;
     private const int IconScale = 3;
     private const int MailEntryIndex = 5;
+    private const int InventoryEntryIndex = 1;
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Dashboard"),
-        (152, "Inventory"),
+        (PelicomStyle.InventoryIcon, "Inventory"),
         (74, "Livestock"),
         (121, "Mining Ledger"),
         (41, "Wallet"),
@@ -31,28 +32,36 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Action<Exception> onDrawFailed;
     private readonly Action openMail;
     private readonly Func<bool> isMailMinimized;
+    private readonly Action openInventory;
+    private readonly Func<bool> isInventoryMinimized;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
 
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
-        Action openMail, Func<bool> isMailMinimized)
+        Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized)
     {
         this.config = config;
         this.isEnabled = isEnabled;
         this.onDrawFailed = onDrawFailed;
         this.openMail = openMail;
         this.isMailMinimized = isMailMinimized;
+        this.openInventory = openInventory;
+        this.isInventoryMinimized = isInventoryMinimized;
     }
 
     internal bool IsVisible => isEnabled() && Game1.IsHudDrawn && !Game1.eventUp && Game1.farmEvent == null
         && Game1.activeClickableMenu == null && Game1.currentMinigame == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Mail is the first working entry; all other entries remain silent placeholders.
+    // Inventory and Mail open desktop windows; the remaining entries are placeholders.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
-        if (IsVisible && drawnBounds.Contains(x, y) && drawnSlots[MailEntryIndex].Contains(x, y))
+        if (!IsVisible || !drawnBounds.Contains(x, y))
+            return;
+        if (drawnSlots[MailEntryIndex].Contains(x, y))
             openMail();
+        else if (drawnSlots[InventoryEntryIndex].Contains(x, y))
+            openInventory();
     }
     public override void receiveRightClick(int x, int y, bool playSound = true) { }
     public override bool isWithinBounds(int x, int y) => IsVisible && drawnBounds.Contains(x, y);
@@ -117,7 +126,7 @@ internal sealed class Pelicom : IClickableMenu
 
             Point position = new((StripWidth - IconSize * IconScale) / 2, slot.Y + (SlotHeight - IconSize * IconScale) / 2);
             PelicomStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
-            if (i == MailEntryIndex && isMailMinimized())
+            if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized()))
                 batch.Draw(Game1.staminaRect, new Rectangle(1, slot.Y + 8, 1, SlotHeight - 16), PelicomStyle.Muted * config.Opacity);
         }
 

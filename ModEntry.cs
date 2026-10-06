@@ -19,7 +19,9 @@ public sealed class ModEntry : Mod
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
     private readonly PerScreen<Pelicom> pelicom = new(() => new Pelicom(Instance.config,
         () => Instance.UsePelicom, Instance.OnPelicomDrawFailed, () => Instance.windowManager.Value.OpenMail(),
-        () => Instance.windowManager.Value.IsMinimized(MailWindow.WindowId)));
+        () => Instance.windowManager.Value.IsMinimized(MailWindow.WindowId),
+        () => Instance.windowManager.Value.OpenInventory(),
+        () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsVisible, Instance.OnWindowDrawFailed));
     private ModConfig config = null!;
@@ -94,6 +96,12 @@ public sealed class ModEntry : Mod
         }
 
         helper.Events.Input.ButtonPressed += OnButtonPressed;
+        helper.Events.Input.MouseWheelScrolled += (_, e) =>
+        {
+            Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+            if (UsePelicom && windowManager.Value.ReceiveScroll(cursor, e.Delta))
+                helper.Input.SuppressScrollWheel();
+        };
         helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch);
         helper.Events.Display.WindowResized += (_, _) => windowManager.Value.InvalidateLayout();
         helper.Events.GameLoop.UpdateTicked += (_, _) =>

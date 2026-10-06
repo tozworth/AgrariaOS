@@ -15,6 +15,7 @@ internal sealed class WindowManager
     private readonly List<OsWindow> drawnWindows = new();
     private Point drawnViewport;
     private OsWindow? draggedWindow;
+    private OsWindow? contentDragWindow;
     private Point dragOffset;
 
     internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed)
@@ -25,6 +26,7 @@ internal sealed class WindowManager
     }
 
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
+    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow());
 
     internal void Open(string id, Func<OsWindow> create)
     {
@@ -38,15 +40,13 @@ internal sealed class WindowManager
 
     internal bool ReceiveClick(Point cursor, bool leftClick)
     {
-        if (!isVisible() || Game1.IsChatting || drawnViewport != new Point(Game1.uiViewport.Width, Game1.uiViewport.Height))
-            return false;
-
-        OsWindow? window = drawnWindows.LastOrDefault(window => !window.IsMinimized && windows.Contains(window) && window.Bounds.Contains(cursor));
+        OsWindow? window = GetWindowAt(cursor);
         if (window == null)
             return false;
 
         if (leftClick)
         {
+            EndDrag();
             windows.Remove(window);
             windows.Add(window);
             if (window.CloseBounds.Contains(cursor))
@@ -64,9 +64,34 @@ internal sealed class WindowManager
                 draggedWindow = window;
                 dragOffset = cursor - window.Bounds.Location;
             }
+            else
+            {
+                window.ReceiveContentClick(cursor, leftClick: true);
+                contentDragWindow = window;
+            }
         }
+        else
+            window.ReceiveContentClick(cursor, leftClick: false);
         // Suppress the whole press (including held repeats) before native HUD/world dispatch.
         return true;
+    }
+
+    internal bool ReceiveScroll(Point cursor, int delta)
+    {
+        OsWindow? window = GetWindowAt(cursor);
+        if (window == null)
+            return false;
+
+        window.ReceiveScroll(delta);
+        return true;
+    }
+
+    private OsWindow? GetWindowAt(Point cursor)
+    {
+        if (!isVisible() || Game1.IsChatting || drawnViewport != new Point(Game1.uiViewport.Width, Game1.uiViewport.Height))
+            return null;
+
+        return drawnWindows.LastOrDefault(window => !window.IsMinimized && windows.Contains(window) && window.Bounds.Contains(cursor));
     }
 
     internal void Update(IInputHelper input)
@@ -74,17 +99,24 @@ internal sealed class WindowManager
         // Suppression reports the button released to the game on subsequent ticks.
         // SMAPI retains the suppression flag until the physical button is released.
         bool leftButtonHeld = input.IsDown(SButton.MouseLeft) || input.IsSuppressed(SButton.MouseLeft);
-        if (!leftButtonHeld || !isVisible())
+        if (!leftButtonHeld || !isVisible() || Game1.IsChatting)
         {
             EndDrag();
             return;
         }
 
+        Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
         if (draggedWindow != null)
-            draggedWindow.MoveTo(new Point(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true)) - dragOffset);
+            draggedWindow.MoveTo(cursor - dragOffset);
+        contentDragWindow?.DragContent(cursor);
     }
 
-    internal void EndDrag() => draggedWindow = null;
+    internal void EndDrag()
+    {
+        draggedWindow = null;
+        contentDragWindow?.EndContentDrag();
+        contentDragWindow = null;
+    }
 
     internal void InvalidateLayout()
     {
