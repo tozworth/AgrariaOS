@@ -19,16 +19,13 @@ internal sealed class ToolbarRenderer
     private Rectangle UpdateLayout(Toolbar toolbar)
     {
         compactToolbar = toolbar;
-        Vector2 playerPosition = Game1.GlobalToLocal(Game1.viewport, Game1.player.StandingPixel.ToVector2());
-        bool atTop = !Game1.options.pinToolbarToggle && playerPosition.Y > Game1.viewport.Height / 2 + 64;
-        int margin = Utility.makeSafeMarginY(8);
         int height = SlotSize + Padding * 2;
         int width = toolbar.buttons.Count * SlotSize + Padding * 2;
         int x = (Game1.uiViewport.Width - width) / 2;
-        int y = atTop ? margin + 8 : Game1.uiViewport.Height - margin - height;
+        int y = Game1.uiViewport.Height - height;
 
         // Keep the vanilla anchor valid so switching back restores its own layout immediately.
-        toolbar.yPositionOnScreen = atTop ? 104 + margin : Game1.uiViewport.Height + 8 - margin;
+        toolbar.yPositionOnScreen = Game1.uiViewport.Height + 8;
         drawnBounds = new Rectangle(x, y, width, height);
         ApplyDrawnLayout(toolbar);
         return drawnBounds;
@@ -41,7 +38,6 @@ internal sealed class ToolbarRenderer
         if (compactToolbar != toolbar)
             return;
 
-        // Input runs without the UI render target. Its safe margin can differ at non-native UI scales.
         // Reuse the geometry that was actually drawn, including after vanilla's first-hover resize.
         for (int i = 0; i < toolbar.buttons.Count; i++)
             toolbar.buttons[i].bounds = new Rectangle(drawnBounds.X + Padding + i * SlotSize,
@@ -60,7 +56,7 @@ internal sealed class ToolbarRenderer
         toolbar.gameWindowSizeChanged(viewport, viewport);
     }
 
-    public void Draw(SpriteBatch batch, Toolbar toolbar)
+    public void Draw(SpriteBatch batch, Toolbar toolbar, ModConfig config, bool showVitals)
     {
         if (Game1.activeClickableMenu != null)
             return;
@@ -98,6 +94,9 @@ internal sealed class ToolbarRenderer
                 StackDrawType.Hide, Color.White, drawShadow: false);
             DrawBadges(batch, item, button.bounds, toolbar.transparency);
         }
+
+        if (showVitals)
+            VitalsRenderer.Draw(batch, strip, config);
 
         if (toolbar.hoverItem is Item hovered)
         {

@@ -96,7 +96,7 @@ internal sealed class HudRenderer
         return bounds;
     }
 
-    private static void DrawText(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config)
+    internal static void DrawText(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config)
     {
         position = new Vector2(MathF.Round(position.X), MathF.Round(position.Y));
         // Whole font scales and pixel-aligned positions avoid resampling the bitmap glyphs.

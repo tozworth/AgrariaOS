@@ -1,5 +1,23 @@
 # Prototype validation
 
+## 0.1.5 update
+
+The compact toolbar is now always centered at the bottom, flush with the UI viewport's bottom edge. Player position and the vanilla pin setting no longer move it; no external bottom margin remains. Health/energy text follows the toolbar above its right edge. Cached click geometry, configured pinned fading and F8 vanilla restoration are preserved.
+
+Built and installed with zero warnings and errors; installed DLL matches the release output and config.json is unchanged. In-game placement and resizing remain to be checked on the next user launch. The game was left untouched.
+
+## 0.1.4 update
+
+Replaced the health/energy bars with a single text row aligned to the compact toolbar's right edge, four pixels above it. Both current/max values remain visible at full health and energy. The game's chat sprite sheet supplies the solid heart (43) and lightning bolt (102), drawn at whole pixel scales. Each value independently follows a muted red (empty), amber (half), green (full) gradient; negative stamina displays as zero, matching vanilla's numeric readout. Numbers use the existing HUD font scale, opacity and pixel-aligned shadow.
+
+The unpinned top toolbar reserves room for this row; bottom placement and cached click geometry are preserved. A guarded Harmony transpiler bypasses only the bar block in `Game1.drawHUD`, retaining event visibility guards, unrelated HUD menus and tracking indicators. Vanilla low-health flash flags are maintained. F8, disabled config, unavailable toolbar and patch failures retain the vanilla bars.
+
+Verified signatures, callers, bar boundaries, health flash flags and chat sprite coordinates against installed Stardew Valley 1.6.15 / SMAPI 4.5.2. Build passed with zero warnings and errors. An ignored local check applied the shipped transpiler to actual game instructions, verified the event guards and entire unrelated HUD tail, and executed the emitted bar block with controlled active/inactive gates. Gradient endpoints, midpoint and bounds checks passed. This is isolated code verification, not in-game visual or startup verification.
+
+In-game checks on the next user launch: sprite/text alignment, full and depleted values, gradual colors, top/bottom placement, toolbar hit targets, F8 restoration, pinned fading, UI/font scaling and split-screen.
+
+Installed 0.1.4 with `build.ps1 -Install`; installed DLL hash matches the release output and config.json's hash is unchanged. The game was left running untouched; the update takes effect on its next launch.
+
 ## 0.1.3 update
 
 Reduced the strip to 484x44 with 40px slots and fixed 32px standard item sprites. Selected, hovered and row-swapped items use the same sprite scale. Stack counts use 1x tiny pixel digits with a one-pixel shadow, placed inside the slot; quality stars are also smaller. Shortcut labels remain hidden.

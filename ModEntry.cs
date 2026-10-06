@@ -1,3 +1,4 @@
+using System.Reflection.Emit;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -5,6 +6,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
 using StardewValley;
+using StardewValley.Locations;
 using StardewValley.Menus;
 
 namespace AgrariaOS;
@@ -18,6 +20,7 @@ public sealed class ModEntry : Mod
     private ModConfig config = null!;
     private bool patchInstalled;
     private bool toolbarPatchInstalled;
+    private bool vitalsPatchInstalled;
 
     public override void Entry(IModHelper helper)
     {
@@ -68,6 +71,23 @@ public sealed class ModEntry : Mod
             }
         }
 
+        if (toolbarPatchInstalled)
+        {
+            try
+            {
+                new Harmony(ModManifest.UniqueID).Patch(
+                    original: AccessTools.DeclaredMethod(typeof(Game1), "drawHUD"),
+                    transpiler: new HarmonyMethod(typeof(ModEntry), nameof(DrawHudTranspiler))
+                );
+                vitalsPatchInstalled = true;
+                Monitor.Log("Text health and energy ready.", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"Couldn't replace the health/energy bars; keeping the vanilla bars.\n{ex}", LogLevel.Error);
+            }
+        }
+
         helper.Events.Input.ButtonPressed += OnButtonPressed;
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
@@ -95,6 +115,39 @@ public sealed class ModEntry : Mod
 
     private bool UseCompactToolbar => toolbarPatchInstalled && config.Enabled && textHudActive.Value && Context.IsWorldReady;
 
+    private bool UseTextVitals => vitalsPatchInstalled && UseCompactToolbar && Game1.activeClickableMenu == null
+        && Game1.onScreenMenus.OfType<Toolbar>().Any();
+
+    private static IEnumerable<CodeInstruction> DrawHudTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+    {
+        List<CodeInstruction> codes = instructions.ToList();
+        int start = codes.FindIndex(code => code.opcode == OpCodes.Ldc_R4 && code.operand is float value && value == 0.625f);
+        int end = codes.FindIndex(code => code.LoadsField(AccessTools.Field(typeof(Game1), nameof(Game1.onScreenMenus))));
+        if (start < 0 || end <= start || codes[start].blocks.Count > 0 || codes[end].blocks.Count > 0)
+            throw new InvalidOperationException("The vanilla HUD bar block wasn't recognized.");
+
+        // Keep event guards, on-screen menus and tracking indicators intact. Only bypass the bars.
+        Label afterBars = generator.DefineLabel();
+        codes[end].labels.Add(afterBars);
+        var check = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(ModEntry), nameof(HideVanillaVitals)));
+        check.labels.AddRange(codes[start].labels);
+        codes[start].labels.Clear();
+        codes.InsertRange(start, new[] { check, new CodeInstruction(OpCodes.Brtrue, afterBars) });
+        return codes;
+    }
+
+    private static bool HideVanillaVitals()
+    {
+        if (!Instance.UseTextVitals)
+            return false;
+
+        // These flags also drive vanilla's low-health screen flash; preserve that behavior.
+        Game1.showingHealth = Game1.currentLocation is MineShaft or Woods or SlimeHutch or VolcanoDungeon
+            || Game1.player.health < Game1.player.maxHealth;
+        Game1.showingHealthBar |= Game1.showingHealth;
+        return true;
+    }
+
     private static bool DrawToolbarPrefix(Toolbar __instance, SpriteBatch b)
     {
         ModEntry mod = Instance;
@@ -106,7 +159,7 @@ public sealed class ModEntry : Mod
 
         try
         {
-            mod.toolbarRenderer.Value.Draw(b, __instance);
+            mod.toolbarRenderer.Value.Draw(b, __instance, mod.config, mod.UseTextVitals);
             return false;
         }
         catch (Exception ex)
