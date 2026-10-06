@@ -1,8 +1,8 @@
 {
   "Name": "Agraria OS",
   "Author": "Toz",
-  "Version": "0.1.1",
-  "Description": "A compact, text-only StardEVE clock and money HUD.",
+  "Version": "0.1.3",
+  "Description": "A compact StardEVE text HUD and flat toolbar.",
   "UniqueID": "Toz.AgrariaOS",
   "EntryDll": "AgrariaOS.dll",
   "MinimumApiVersion": "4.4.0"
