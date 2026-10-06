@@ -1,8 +1,8 @@
 # Agraria OS
 
-A piecemeal StardEVE SMAPI mod. `docs/stardeve.md` is the original proposal, not a requirement to implement everything. Favor small, usable additions and a dense EVE-like UI.
+A piecemeal SMAPI mod aiming to bring Stardew's interaction and UX philosophy closer to micromanagement MMORPGs, especially EVE Online. Original name was "StardEVE". `docs/stardeve.md` is the archived OG proposal, not a requirement to implement everything. Favor small, usable additions and a dense EVE-like UI.
 
-Current features: transparent text HUD replacing the clock/money panel, journal/zoom text controls, F8 vanilla toggle, pixel-aligned fonts, cosmetic security ratings and mine depth labels, compact bottom toolbar with text vitals, and the slim left Pelicom rail with placeholder emoji buttons. Grep the C# files for details; `SecurityStatus.cs` owns ratings and colors, `ModConfig.cs` owns settings.
+Current features: transparent text HUD replacing the clock/money panel, journal/zoom text controls, F8 vanilla toggle, pixel-aligned fonts, cosmetic security ratings and mine depth labels, compact bottom toolbar with text vitals, and the slim left Pelicom rail. Mail opens a draggable desktop window with minimize/restore/close; other rail buttons remain placeholders. `WindowManager.cs` owns per-screen window lifecycle and input priority, `OsWindow.cs` owns shared window chrome, and `PelicomStyle.cs` owns shared colors/icons. Grep the C# files for details; `SecurityStatus.cs` owns ratings and colors, `ModConfig.cs` owns settings.
 
 ## Build
 

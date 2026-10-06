@@ -1,5 +1,25 @@
 # Prototype validation
 
+## 0.1.9 update
+
+Fixed title-strip dragging. SMAPI carries mouse suppression across ticks by reporting the held button as released to game input. The previous ButtonReleased handler ended the drag on that synthetic release, and IsDown alone also stopped tracking on the following tick. Window updates now treat IsDown or IsSuppressed as held; SMAPI clears suppression when the physical button is released. Removed the ButtonReleased handler so synthetic releases no longer cancel dragging. Existing visibility/resize cancellation and minimize/close behavior remain intact.
+
+Verified SMAPI 4.5.2's TrueUpdate, suppression cleanup, event derivation and input helper behavior against local ILSpy output. Extended the ignored assembly check with the real SMAPI SInputState/InputHelper and synthetic cursor/button frames: dragging continues through the suppression-generated Released state and later up states at UI scales 0.75, 1, 1.25 and 1.5, then stops at physical release. Existing window lifecycle, covered/right-click input, visibility/resize guards and 24 viewport/font layouts also pass. This is isolated code verification; actual dragging still needs confirmation in-game.
+
+Built, packaged and installed with zero warnings and errors while the game was closed. Installed DLL matches the release output; config.json is unchanged. No game was launched or save loaded.
+
+## 0.1.8 update
+
+Added a per-screen desktop window manager and the first window, Mail. Shared Pelicom styling supplies the same charcoal background, opacity and subtle one-pixel border. The compact title strip has the Mail emoji at left, centered title and pixel-drawn minimize/close controls at right. The content displays centered, muted `No mail.` text. Dragging the title moves the window; layout clamps it beside the rail and within the UI viewport.
+
+Clicking Mail opens or focuses one instance. Minimize retains that instance and position, hides its window and adds a short one-pixel marker left of the rail icon. Clicking the icon restores it. Close removes the instance, and the next icon click initializes a fresh window. Window drawing runs after the native HUD; SMAPI suppresses covered left/right mouse presses before native HUD/world dispatch, including held repeats. Other rail entries remain placeholders. F8, menu/event visibility guards, per-screen state and title-screen reset are preserved.
+
+Verified installed Stardew Valley 1.6.15 / SMAPI 4.5.2 versions, UI mouse conversion, HUD draw/input callers, render batch state and SMAPI suppression/update order against local ILSpy output. An ignored local check exercised the shipped assembly's open/minimize/restore/close/reinitialize transitions, title-drag start/release, right-click capture, outside/hidden/stale-resize input guards and 24 viewport/font layouts. This is isolated lifecycle/geometry verification, not startup or in-game visual verification.
+
+Built, packaged and installed with zero warnings and errors while the game was closed. Installed DLL matches the release output; config.json is unchanged. No game was launched or save loaded. On the next user launch, check Mail's appearance, drag and resize behavior at different UI scales, minimize marker/restore, close/reopen, covered controls/world clicks, F8, vanilla menus/events and split-screen isolation.
+
+The user subsequently confirmed minimize/close work but dragging does not. SMAPI-latest.txt confirms 0.1.8 loaded and all three HUD patches initialized without an Agraria OS error. The dragging failure is addressed in 0.1.9 above.
+
 ## 0.1.7 update
 
 Enlarged Pelicom to a 35px rail with 35px slots and crisp 27px icons (3x native sprites). Dashboard through Mail stay at the top; Notifications and Exit anchor eight pixels above the viewport bottom, with an inset one-pixel separator eight pixels above their group. Hover labels follow the actual top/bottom slot positions, and short viewports skip overlapping top entries. HUD spacing follows the wider rail automatically; no-op clicks and F8 remain intact.
