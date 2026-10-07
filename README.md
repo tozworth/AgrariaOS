@@ -5,10 +5,25 @@ A SMAPI mod bringing a compact, EVE-inspired HUD and desktop windows to Stardew 
 The Pelicom rail opens Inventory, Mail, Chat and Notifications. Windows support dragging, resizing,
 minimizing and restoring, with placement saved per farmer. Other rail entries are placeholders.
 
-Notifications replace vanilla HUD toasts with dark, pixel-aligned bubbles. The rail badge shows
+Right-click the Pelicom rail for a checkable Auto-hide placeholder (session-only, with no hiding
+behavior), or an Inventory item row for Split and Jettison placeholders. These item actions do
+not change the backpack. Click outside or press Escape to dismiss a context menu.
+
+Right-click a TV to choose from its currently available channels, or a telephone to see all
+contacts together (including contacts supplied by other mods). These world menus use a
+"Choose Option" heading; long lists scroll with the wheel. A ringing phone also offers Answer-call.
+Right-click the repaired bus ticket machine while Pam is at her driving spot for Buy-ticket (500g),
+which purchases directly through vanilla logic. Without Pam, the machine keeps its vanilla interaction.
+Keyboard/controller actions and F8 retain vanilla interaction menus. Moving to another tile,
+changing location or removing the target dismisses its popup. Broadcasts, calls and ticket outcomes
+still use the game's original callbacks; follow-up choices remain vanilla.
+
+Notifications replace text-only HUD toasts with dark, pixel-aligned bubbles. Item pickups and
+icon toasts (including inventory-full, health/energy, quest and achievement messages) stay vanilla
+and do not enter history or affect the unread badge. The rail badge shows
 unread arrivals (up to 99; hover for the full count). Opening the history clears the badge while
-the window is visible. History lists every arrival through Stardew's `addHUDMessage` API newest
-first, with the sending season/day/year, in-game time and pickup quantity. Repeated live toasts
+the window is visible. History lists text-only arrivals through Stardew's `addHUDMessage` API newest
+first, with the sending season/day/year and in-game time. Repeated live toasts
 still merge and expire as vanilla does; history keeps each arrival separately. History remains
 across days and window closes, and resets on returning to the title screen. It is separate for
 each local screen and continues recording while F8 displays the vanilla HUD.
@@ -41,14 +56,15 @@ Target: .NET 6, with game/SMAPI/Harmony references supplied by ModBuildConfig.
 ## Source map
 
 - `src/ModEntry.cs`: SMAPI events, per-screen state and F8 fallback.
-- `src/Integration/`: narrow Harmony patches for HUD elements/notifications and dialogue routing event integration.
+- `src/Integration/`: narrow Harmony patches for HUD elements/notifications, world mouse interactions and dialogue routing event integration.
+- `src/Interactions/`: extensible world context-menu providers using native choices and continuations.
 - `src/Configuration/`: HUD settings and saved window placement.
 - `src/Hud/`: status readout, toolbar/vitals, security colors and notification bubbles.
 - `src/Desktop/`: Pelicom rail, window lifecycle, input priority and shared window chrome.
 - `src/Desktop/Windows/`: Inventory, Mail, Chat and Notifications content.
 - `src/Chat/`: Session/Local histories, sending timestamps and native dialogue advancement.
 - `src/Notifications/`: immutable session arrivals and unread tracking.
-- `src/UI/`: shared colors/icons, tab selection, text composer and pixel-aligned text fitting/wrapping.
+- `src/UI/`: shared context menus, colors/icons, tab selection, text composer and pixel-aligned text fitting/wrapping.
 
 See [VALIDATION.md](VALIDATION.md) for runtime checks and [the original proposal](docs/stardeve.md)
 for the archived StardEVE concept.

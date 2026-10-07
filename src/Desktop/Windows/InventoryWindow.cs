@@ -17,10 +17,12 @@ internal sealed class InventoryWindow : OsWindow
     private const int ScrollbarWidth = 10;
     private static readonly string[] Headings = { "Name", "Qty", "Category", "Value" };
     private static readonly int[] MinimumWidths = { 44, 28, 36, 36 };
+    private static readonly ContextMenuItem[] ItemMenu = { new("Split"), new("Jettison") };
     private readonly int[] preferredWidths = { 264, 52, 160, 100 };
     private readonly int[] columnWidths = new int[4];
     private readonly Rectangle[] headers = new Rectangle[4];
     private readonly List<Item> items = new();
+    private readonly List<Rectangle> itemRowBounds = new();
     private Rectangle rowsBounds;
     private Rectangle scrollTrack;
     private Rectangle scrollThumb;
@@ -47,6 +49,7 @@ internal sealed class InventoryWindow : OsWindow
     {
         // Preserve backpack slot order and separate stacks; never mutate the player's items.
         items.Clear();
+        itemRowBounds.Clear();
         foreach (Item? item in Game1.player.Items)
         {
             if (item != null)
@@ -107,6 +110,7 @@ internal sealed class InventoryWindow : OsWindow
         {
             Item item = items[i];
             Rectangle row = new(rowsBounds.X, rowsBounds.Y + (i - firstRow) * rowHeight, tableWidth, rowHeight);
+            itemRowBounds.Add(row);
             if (row.Contains(cursor))
                 batch.Draw(Game1.staminaRect, row, UiStyle.Border * (config.Opacity * 0.55f));
             else if ((i & 1) != 0)
@@ -136,6 +140,9 @@ internal sealed class InventoryWindow : OsWindow
             summary += $"   |   {firstRow + 1}-{endRow} of {items.Count}";
         DrawCellText(batch, summary, footer, UiStyle.Muted, config);
     }
+
+    internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
+        => itemRowBounds.Any(row => row.Contains(cursor)) ? ItemMenu : null;
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick)
     {

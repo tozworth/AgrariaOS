@@ -32,7 +32,8 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.IsMinimized(NotificationsWindow.WindowId),
         () => Instance.notificationHistory.Value.UnreadCount,
         () => Instance.windowManager.Value.OpenChat(Instance.chatHistory.Value),
-        () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId)));
+        () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId),
+        (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed, () => Instance.Helper.WriteConfig(Instance.config)));
     private ModConfig config = null!;
@@ -49,6 +50,7 @@ public sealed partial class ModEntry : Mod
         helper.WriteConfig(config);
 
         InstallHudPatches();
+        InstallWorldInteractionPatches();
 
         helper.Events.GameLoop.DayStarted += (_, _) =>
         {
@@ -96,6 +98,9 @@ public sealed partial class ModEntry : Mod
             notificationBubbleRenderer.ResetAllScreens();
             pelicom.ResetAllScreens();
             windowManager.ResetAllScreens();
+            rightClickAction.ResetAllScreens();
+            telephoneTarget.ResetAllScreens();
+            worldInteractionsFailed.ResetAllScreens();
         };
     }
 
@@ -114,6 +119,8 @@ public sealed partial class ModEntry : Mod
             {
                 if (leftClick)
                     pelicom.Value.receiveLeftClick(cursor.X, cursor.Y);
+                else
+                    pelicom.Value.receiveRightClick(cursor.X, cursor.Y);
                 Helper.Input.Suppress(e.Button);
                 return;
             }

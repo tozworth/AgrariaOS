@@ -52,8 +52,13 @@ internal sealed class NotificationHistory
     {
         // Corner textboxes arrive pre-wrapped for vanilla's dialogue font. Reflow for our width.
         string text = string.Join(" ", (message.message ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return message.number > 0 ? $"{text} ×{message.number}" : text;
+        return text;
     }
+
+    internal static bool IsTextOnly(HUDMessage message)
+        // Vanilla's noIcon branch draws only text; otherwise type 0 has no icon.
+        => message.messageSubject == null && message.number <= 0
+            && (message.noIcon || message.whatType == 0);
 
     internal static Color GetColor(int kind) => kind switch
     {

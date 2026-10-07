@@ -1,3 +1,4 @@
+using AgrariaOS.Notifications;
 using HarmonyLib;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
@@ -31,8 +32,9 @@ public sealed partial class ModEntry
     private static void CaptureNotificationPrefix(HUDMessage message)
     {
         ModEntry mod = Instance;
-        // Continue recording while F8 shows vanilla. Capture before vanilla merges quantities.
-        if (!mod.notificationPatchInstalled || !mod.config.Enabled || !Context.IsWorldReady || message == null)
+        // Continue recording text-only arrivals while F8 shows vanilla.
+        if (!mod.notificationPatchInstalled || !mod.config.Enabled || !Context.IsWorldReady
+            || message == null || !NotificationHistory.IsTextOnly(message))
             return;
         try
         {
@@ -48,7 +50,7 @@ public sealed partial class ModEntry
     private static bool DrawNotificationPrefix(HUDMessage __instance, SpriteBatch b, ref int heightUsed)
     {
         ModEntry mod = Instance;
-        if (!mod.notificationPatchInstalled || !mod.UsePelicom)
+        if (!mod.notificationPatchInstalled || !mod.UsePelicom || !NotificationHistory.IsTextOnly(__instance))
             return true;
         int previousHeight = heightUsed;
         try

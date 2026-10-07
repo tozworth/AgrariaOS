@@ -2,6 +2,7 @@ using AgrariaOS.Configuration;
 using AgrariaOS.Chat;
 using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Notifications;
+using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -20,6 +21,7 @@ internal sealed class WindowManager
     // Last entry is the front window, in both drawing and hit testing.
     private readonly List<OsWindow> windows = new();
     private readonly List<OsWindow> drawnWindows = new();
+    private readonly ContextMenu contextMenu = new();
     private Point drawnViewport;
     private OsWindow? draggedWindow;
     private OsWindow? resizedWindow;
@@ -52,6 +54,7 @@ internal sealed class WindowManager
 
     internal void Open(string id, Func<OsWindow> create)
     {
+        contextMenu.Close();
         ClearKeyboardFocus();
         OsWindow? window = windows.FirstOrDefault(window => window.Id == id);
         if (window == null)
@@ -74,8 +77,21 @@ internal sealed class WindowManager
 
     internal bool IsMinimized(string id) => windows.Any(window => window.Id == id && window.IsMinimized);
 
+    internal bool IsContextMenuOpen => contextMenu.IsOpen;
+
+    internal void CloseContextMenu() => contextMenu.Close();
+
+    internal bool ShowContextMenu(Point cursor, ContextMenuItem[] items, string? title = null, Func<bool>? isValid = null)
+    {
+        EndDrag();
+        ClearKeyboardFocus();
+        return contextMenu.Open(cursor, items, config, title, isValid);
+    }
+
     internal bool ReceiveClick(Point cursor, bool leftClick)
     {
+        if (CanReceiveInput && contextMenu.ReceiveClick(cursor, leftClick))
+            return true;
         OsWindow? window = GetWindowAt(cursor);
         ClearKeyboardFocus();
         if (window == null)
@@ -122,13 +138,21 @@ internal sealed class WindowManager
             }
         }
         else
-            window.ReceiveContentClick(cursor, leftClick: false);
+        {
+            ContextMenuItem[]? items = window.GetContextMenuItems(cursor);
+            if (items != null)
+                ShowContextMenu(cursor, items);
+            else
+                window.ReceiveContentClick(cursor, leftClick: false);
+        }
         // Suppress the whole press (including held repeats) before native HUD/world dispatch.
         return true;
     }
 
     internal bool ReceiveScroll(Point cursor, int delta)
     {
+        if (CanReceiveInput && contextMenu.ReceiveScroll(delta))
+            return true;
         OsWindow? window = GetWindowAt(cursor);
         if (window == null)
             return false;
@@ -137,9 +161,12 @@ internal sealed class WindowManager
         return true;
     }
 
+    private bool CanReceiveInput => isVisible() && !Game1.IsChatting
+        && drawnViewport == new Point(Game1.uiViewport.Width, Game1.uiViewport.Height);
+
     private OsWindow? GetWindowAt(Point cursor)
     {
-        if (!isVisible() || Game1.IsChatting || drawnViewport != new Point(Game1.uiViewport.Width, Game1.uiViewport.Height))
+        if (!CanReceiveInput)
             return null;
 
         return drawnWindows.LastOrDefault(window => !window.IsMinimized && windows.Contains(window) && window.Bounds.Contains(cursor));
@@ -147,6 +174,9 @@ internal sealed class WindowManager
 
     internal void Update(IInputHelper input)
     {
+        contextMenu.Update();
+        if (!CanReceiveInput)
+            contextMenu.Close();
         RefreshKeyboardFocus();
         // Suppression reports the button released to the game on subsequent ticks.
         // SMAPI retains the suppression flag until the physical button is released.
@@ -192,6 +222,7 @@ internal sealed class WindowManager
 
     internal void InvalidateLayout()
     {
+        contextMenu.Close();
         ClearKeyboardFocus();
         drawnWindows.Clear();
         EndDrag();
@@ -202,6 +233,7 @@ internal sealed class WindowManager
         drawnWindows.Clear();
         if (!isVisible())
         {
+            contextMenu.Close();
             ClearKeyboardFocus();
             EndDrag();
             return;
@@ -209,6 +241,8 @@ internal sealed class WindowManager
 
         try
         {
+            if (!CanReceiveInput)
+                contextMenu.Close();
             drawnViewport = new Point(Game1.uiViewport.Width, Game1.uiViewport.Height);
             const int margin = 8;
             int left = Pelicom.StripWidth + margin;
@@ -225,6 +259,7 @@ internal sealed class WindowManager
                     drawnWindows.Add(window);
                 }
             }
+            contextMenu.Draw(batch, config, cursor);
         }
         catch (Exception ex)
         {
@@ -267,6 +302,11 @@ internal sealed class WindowManager
 
     internal bool ReceiveKeyboardButton(SButton button, IInputHelper input)
     {
+        if (CanReceiveInput && contextMenu.IsOpen && button == SButton.Escape)
+        {
+            contextMenu.Close();
+            return true;
+        }
         if (!RefreshKeyboardFocus() || !Game1.game1.HasKeyboardFocus() || !button.TryGetKeyboard(out Keys key))
             return false;
         if (key is Keys.Escape or Keys.Tab)
