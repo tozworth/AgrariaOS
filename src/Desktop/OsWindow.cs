@@ -148,7 +148,7 @@ internal abstract class OsWindow
             UiStyle.Border * config.Opacity);
 
         const int iconSize = 18;
-        UiStyle.DrawIcon(batch, Icon, new Point(Bounds.X + 6, Bounds.Y + (TitleHeight - iconSize) / 2), 2, config.Opacity);
+        DrawTitleIcon(batch, new Point(Bounds.X + 6, Bounds.Y + (TitleHeight - iconSize) / 2), config);
         Rectangle titleTextBounds = new(Bounds.X + 30, Bounds.Y, Math.Max(0, MinimizeBounds.X - Bounds.X - 36), TitleHeight);
         DrawTitle(batch, titleTextBounds, config);
         DrawButton(batch, MinimizeBounds, cursor, config, close: false);
@@ -159,6 +159,9 @@ internal abstract class OsWindow
     }
 
     protected abstract void DrawContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config);
+
+    internal virtual void DrawTitleIcon(SpriteBatch batch, Point position, ModConfig config)
+        => UiStyle.DrawIcon(batch, Icon, position, 2, config.Opacity);
 
     private void DrawTitle(SpriteBatch batch, Rectangle bounds, ModConfig config)
     {

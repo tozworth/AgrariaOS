@@ -9,7 +9,7 @@ namespace AgrariaOS;
 public sealed partial class ModEntry
 {
     private bool CanClickToMove => UsePelicom && config.ClickToMove && !clickToMoveFailed.Value
-        && Context.CanPlayerMove && !Game1.IsChatting && !Game1.eventUp && Game1.currentMinigame == null
+        && Context.CanPlayerMove && !HasDesktopFocus && !Game1.IsChatting && !Game1.eventUp && Game1.currentMinigame == null
         && Game1.farmEvent == null && !Game1.paused && !Game1.HostPaused && !Game1.fadeToBlack
         && !Game1.freezeControls && !Game1.panMode && Game1.locationRequest == null
         && Game1.game1.IsActiveNoOverlay && !Game1.player.UsingTool && !Game1.player.isEating

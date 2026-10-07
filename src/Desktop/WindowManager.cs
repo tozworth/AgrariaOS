@@ -132,6 +132,21 @@ internal sealed class WindowManager
 
     internal bool IsContextMenuOpen => contextMenu.IsOpen;
 
+    // Focus, not visibility, owns the pause. Background windows can stay open while playing.
+    internal bool HasDesktopFocus => isVisible() && !Game1.IsChatting
+        && (contextMenu.IsOpen || HasPendingTransfer || draggedWindow != null || resizedWindow != null
+            || contentDragWindow != null || itemDragSource != null
+            || (focusedWindow is { IsValid: true, IsMinimized: false } focused && windows.Contains(focused)));
+
+    internal void FocusWorld()
+    {
+        if (HasPendingTransfer || itemDragSource != null || draggedWindow != null || resizedWindow != null
+            || contentDragWindow != null)
+            return;
+        focusedWindow = null;
+        ClearKeyboardFocus();
+    }
+
     internal void CloseContextMenu() => contextMenu.Close();
 
     internal bool ShowContextMenu(Point cursor, ContextMenuItem[] items, string? title = null, Func<bool>? isValid = null,
@@ -151,10 +166,11 @@ internal sealed class WindowManager
         if (CanReceiveInput && contextMenu.ReceiveClick(cursor, leftClick))
             return true;
         OsWindow? window = GetWindowAt(cursor);
+        if (window == null)
+            return CanReceiveInput && (HasPendingTransfer || itemDragSource != null || draggedWindow != null
+                || resizedWindow != null || contentDragWindow != null);
         ClearKeyboardFocus();
         focusedWindow = window;
-        if (window == null)
-            return false;
 
         if (leftClick)
         {
@@ -235,6 +251,7 @@ internal sealed class WindowManager
         if (window == null)
             return false;
 
+        focusedWindow = window;
         window.ReceiveScroll(delta);
         return true;
     }

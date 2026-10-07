@@ -65,6 +65,7 @@ public sealed partial class ModEntry : Mod
         helper.Events.GameLoop.GameLaunched += (_, _) => InitializeLookupAnything();
 
         InstallHudPatches();
+        InstallDesktopPausePatches();
         InstallWorldInteractionPatches();
 
         helper.Events.GameLoop.DayStarted += (_, _) =>
@@ -77,6 +78,7 @@ public sealed partial class ModEntry : Mod
         helper.Events.GameLoop.UpdateTicking += (_, _) =>
         {
             windowManager.Value.SuppressKeyboardInput(helper.Input);
+            UpdateDesktopPause();
             UpdateClickToMove(beforeUpdate: true);
         };
         helper.Events.Input.MouseWheelScrolled += (_, e) =>
@@ -174,6 +176,9 @@ public sealed partial class ModEntry : Mod
                 Helper.Input.Suppress(e.Button);
                 return;
             }
+            if (!Game1.IsChatting && !Game1.onScreenMenus.Any(menu => (Game1.IsHudDrawn || menu == Game1.chatBox)
+                    && menu.isWithinBounds(cursor.X, cursor.Y)))
+                windowManager.Value.FocusWorld();
         }
 
         if (UsePelicom && e.Button != config.ToggleKey && !e.IsSuppressed()

@@ -14,7 +14,8 @@ internal sealed class StatusReadoutRenderer : IDisposable
     private static readonly Color SecondaryColor = new(166, 187, 204);
     private static readonly Color WarningColor = new(255, 170, 95);
     private Snapshot? previous;
-    private string dateAndTime = "";
+    private string timeText = "";
+    private string dateText = "";
     private string conditionsAndMoney = "";
     private Texture2D? cornerShadow;
 
@@ -30,13 +31,14 @@ internal sealed class StatusReadoutRenderer : IDisposable
             : "CLEAR";
 
         var snapshot = new Snapshot(Game1.timeOfDay, Game1.dayOfMonth, Game1.currentSeason, Game1.year,
-            Game1.player.Money, phase, weather, LocalizedContentManager.CurrentLanguageCode);
+            Game1.player.Money, phase, weather, LocalizedContentManager.CurrentLanguageCode, !Game1.shouldTimePass());
         if (snapshot != previous)
         {
             previous = snapshot;
             string season = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(snapshot.Season);
             string weekday = Game1.shortDayDisplayNameFromDayOfSeason(snapshot.Day);
-            dateAndTime = $"{FormatTime(snapshot.Time, config.Use24HourClock)} | {season} {weekday} {snapshot.Day} Y{snapshot.Year}";
+            timeText = FormatTime(snapshot.Time, config.Use24HourClock);
+            dateText = $"| {season} {weekday} {snapshot.Day} Y{snapshot.Year}";
             string money = snapshot.Money.ToString("N0", CultureInfo.InvariantCulture);
             conditionsAndMoney = config.ShowWeather ? $"{phase} | {weather} | {money} g" : $"{phase} | {money} g";
         }
@@ -51,7 +53,16 @@ internal sealed class StatusReadoutRenderer : IDisposable
                 : mine.getMineArea() == StardewValley.Locations.MineShaft.quarryMineShaft ? "Quarry Mine" : $"The Mines - Floor {mine.mineLevel}";
         float security = SecurityStatus.GetRating(location);
         string securityText = config.ShowSecurity ? " " + SecurityStatus.Format(security) : "";
-        float width = Math.Max(font.MeasureString(dateAndTime).X, font.MeasureString(conditionsAndMoney).X) * scale;
+        Vector2 timeSize = font.MeasureString(timeText) * scale;
+        float timeWidth = MathF.Ceiling(timeSize.X);
+        int iconScale = Math.Max(1, (int)MathF.Round(scale));
+        int pauseWidth = 6 * iconScale;
+        int pauseHeight = 8 * iconScale;
+        int pausePadding = 3 * iconScale;
+        // Reserve the same compact gap while running so the clock/date never jump.
+        int pauseSpace = pauseWidth + pausePadding * 2;
+        float width = Math.Max(timeWidth + pauseSpace + font.MeasureString(dateText).X * scale,
+            font.MeasureString(conditionsAndMoney).X * scale);
         if (config.ShowLocation)
             width = Math.Max(width, (font.MeasureString(locationText).X + font.MeasureString(securityText).X) * scale);
 
@@ -66,7 +77,23 @@ internal sealed class StatusReadoutRenderer : IDisposable
                 UiText.Draw(batch, securityText, new Vector2(x + MathF.Ceiling(font.MeasureString(locationText).X * scale), y), SecurityStatus.GetColor(security), config);
             y += lineHeight;
         }
-        UiText.Draw(batch, dateAndTime, new Vector2(x, y), Game1.timeOfDay >= 2400 ? WarningColor : PrimaryColor, config);
+        Color timeColor = Game1.timeOfDay >= 2400 ? WarningColor : PrimaryColor;
+        UiText.Draw(batch, timeText, new Vector2(x, y), timeColor, config);
+        if (snapshot.Paused)
+        {
+            int iconX = (int)(x + timeWidth) + pausePadding;
+            int iconY = (int)MathF.Round(y + (timeSize.Y - pauseHeight) / 2);
+            for (int bar = 0; bar < 2; bar++)
+            {
+                Rectangle bounds = new(iconX + bar * 4 * iconScale, iconY, 2 * iconScale, pauseHeight);
+                Rectangle shadow = new(bounds.X + 1, bounds.Y + 1, bounds.Width, bounds.Height);
+                batch.Draw(Game1.staminaRect, shadow, null, Color.Black * (config.Opacity * 0.8f),
+                    0f, Vector2.Zero, SpriteEffects.None, 0.9f);
+                batch.Draw(Game1.staminaRect, bounds, null, timeColor * config.Opacity,
+                    0f, Vector2.Zero, SpriteEffects.None, 0.91f);
+            }
+        }
+        UiText.Draw(batch, dateText, new Vector2(x + timeWidth + pauseSpace, y), timeColor, config);
         y += lineHeight;
         UiText.Draw(batch, conditionsAndMoney, new Vector2(x, y), PrimaryColor, config);
         y += lineHeight;
@@ -146,5 +173,5 @@ internal sealed class StatusReadoutRenderer : IDisposable
     }
 
     private sealed record Snapshot(int Time, int Day, string Season, int Year, int Money, string Phase, string Weather,
-        LocalizedContentManager.LanguageCode Language);
+        LocalizedContentManager.LanguageCode Language, bool Paused);
 }
