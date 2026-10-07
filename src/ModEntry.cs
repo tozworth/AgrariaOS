@@ -45,10 +45,14 @@ public sealed partial class ModEntry : Mod
         (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items),
         () => Instance.windowManager.Value.GetMinimizedWindowItems(),
         () => Instance.windowManager.Value.OpenMiningLedger(Instance.miningLedger),
-        () => Instance.windowManager.Value.IsMinimized(MiningLedgerWindow.WindowId)));
+        () => Instance.windowManager.Value.IsMinimized(MiningLedgerWindow.WindowId),
+        () => Instance.windowManager.Value.OpenOverview(),
+        () => Instance.windowManager.Value.IsMinimized(OverviewWindow.WindowId)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
-        () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything));
+        () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything,
+        () => Instance.clickToMove.Value));
+    private readonly PerScreen<bool> overviewAutoOpened = new(() => false);
     private LookupAnythingIntegration lookupAnything = null!;
     private readonly HardwareCursor hardwareCursor = new();
     private ModConfig config = null!;
@@ -88,7 +92,6 @@ public sealed partial class ModEntry : Mod
         };
         helper.Events.Input.MouseWheelScrolled += (_, e) =>
         {
-            clickToMove.Value.Cancel();
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             if (UsePelicom && windowManager.Value.ReceiveScroll(cursor, e.Delta))
                 helper.Input.SuppressScrollWheel();
@@ -108,7 +111,8 @@ public sealed partial class ModEntry : Mod
         };
         helper.Events.Display.MenuChanged += (_, e) =>
         {
-            clickToMove.Value.Cancel();
+            // Preserve the queue across dialogues/menus: Before/AfterUpdate pause on
+            // !canMove and StartNextQueued skips stale legs, so no cancel is needed here.
             hardwareCursor.Reset();
             // Also release the text field if another mod or a title transition replaces it.
             if (e.OldMenu is NumberEntryMenu numberEntry)
@@ -120,6 +124,14 @@ public sealed partial class ModEntry : Mod
             // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
             if (patchInstalled && config.Enabled && Context.IsWorldReady && !Game1.onScreenMenus.Contains(pelicom.Value))
                 Game1.onScreenMenus.Add(pelicom.Value);
+            // Overview opens by default once per screen session, in the background so the
+            // game doesn't start paused. Closing it stays closed until the O key reopens it.
+            if (!overviewAutoOpened.Value && UsePelicom)
+            {
+                overviewAutoOpened.Value = true;
+                windowManager.Value.OpenOverview();
+                windowManager.Value.FocusWorld();
+            }
             RouteDialogue();
             windowManager.Value.Update(helper.Input);
             UpdateHardwareCursor();
@@ -147,6 +159,7 @@ public sealed partial class ModEntry : Mod
             notificationBubbleRenderer.ResetAllScreens();
             pelicom.ResetAllScreens();
             windowManager.ResetAllScreens();
+            overviewAutoOpened.ResetAllScreens();
             rightClickAction.ResetAllScreens();
             interactArrival.ResetAllScreens();
             telephoneTarget.ResetAllScreens();
@@ -158,9 +171,15 @@ public sealed partial class ModEntry : Mod
     {
         // New destinations, UI clicks and ordinary controls all release our route first.
         // This only clears a controller we own, never one installed by an event/other mod.
+        // Mouse clicks manage the queue themselves (replace vs append); clearing here
+        // would drop the queue before an explicit Ctrl+click or auto-queued rock can append.
         if (e.Button is not (SButton.LeftShift or SButton.RightShift or SButton.LeftControl or SButton.RightControl
-            or SButton.LeftAlt or SButton.RightAlt))
-            clickToMove.Value.Cancel();
+            or SButton.LeftAlt or SButton.RightAlt or SButton.MouseLeft or SButton.MouseRight))
+        {
+            // Opening the overview is UI chrome, not a new destination or tool action.
+            if (e.Button != config.OverviewKey)
+                clickToMove.Value.Cancel();
+        }
         // Release the modal before evaluating the usual player-free F8 fallback.
         if (e.Button == config.ToggleKey && Game1.activeClickableMenu is NumberEntryMenu numberEntry)
             numberEntry.exitThisMenu(playSound: false);
@@ -195,7 +214,7 @@ public sealed partial class ModEntry : Mod
             return;
         }
 
-        if (e.Button == SButton.MouseLeft && !e.IsSuppressed() && CanClickToMove
+        if (e.Button == SButton.MouseLeft && !e.IsSuppressed() && (CanClickToMove || CanAppendToQueue)
             && !Helper.Input.IsDown(SButton.LeftShift) && !Helper.Input.IsDown(SButton.RightShift))
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
@@ -206,7 +225,17 @@ public sealed partial class ModEntry : Mod
                 try
                 {
                     Vector2 pixel = e.Cursor.AbsolutePixels;
-                    if (clickToMove.Value.Start(new Point((int)MathF.Floor(pixel.X / 64), (int)MathF.Floor(pixel.Y / 64))))
+                    Point tile = new Point((int)MathF.Floor(pixel.X / 64), (int)MathF.Floor(pixel.Y / 64));
+                    bool busyBefore = clickToMove.Value.IsBusy;
+                    bool moveAllowed = CanClickToMove;
+                    bool queued = TryQueueLeftClick(tile);
+                    bool started = false;
+                    // Append-only mode (mid-swing) must never Start: that would hijack
+                    // the swing with a fresh route and wipe the repeat session.
+                    if (!queued && moveAllowed)
+                        started = clickToMove.Value.Start(tile);
+                    Monitor.Log($"LeftClick loc={Game1.currentLocation?.Name} tile={tile} playerTile={Game1.player.TilePoint} busyBefore={busyBefore} moveAllowed={moveAllowed} queued={queued} started={started} {clickToMove.Value.LastDebug}", LogLevel.Trace);
+                    if (queued || started)
                         Helper.Input.Suppress(e.Button);
                 }
                 catch (Exception ex)
@@ -217,7 +246,7 @@ public sealed partial class ModEntry : Mod
             }
         }
 
-        if (e.Button == SButton.MouseRight && !e.IsSuppressed() && CanClickToMove
+        if (e.Button == SButton.MouseRight && !e.IsSuppressed() && (CanClickToMove || CanAppendToQueue)
             && !Helper.Input.IsDown(SButton.LeftShift) && !Helper.Input.IsDown(SButton.RightShift))
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
@@ -230,6 +259,13 @@ public sealed partial class ModEntry : Mod
                     Helper.Input.Suppress(e.Button);
                 // Unactionable far tiles keep vanilla's facing-tile action plus Lookup info.
             }
+        }
+
+        if (UsePelicom && !Game1.IsChatting && !e.IsSuppressed() && e.Button == config.OverviewKey)
+        {
+            windowManager.Value.OpenOverview();
+            Helper.Input.Suppress(e.Button);
+            return;
         }
 
         if (!patchInstalled || !config.Enabled || !Context.IsWorldReady || !Context.IsPlayerFree || e.Button != config.ToggleKey)

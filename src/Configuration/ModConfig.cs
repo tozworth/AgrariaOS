@@ -7,6 +7,7 @@ public sealed class ModConfig
     public bool Enabled { get; set; } = true;
     public bool ClickToMove { get; set; } = true;
     public SButton ToggleKey { get; set; } = SButton.F8;
+    public SButton OverviewKey { get; set; } = SButton.O;
     public int X { get; set; } = 24;
     public int Y { get; set; } = 20;
     public float TextScale { get; set; } = 1f;

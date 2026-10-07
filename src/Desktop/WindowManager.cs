@@ -5,6 +5,7 @@ using AgrariaOS.Notifications;
 using AgrariaOS.Interactions;
 using AgrariaOS.Integration;
 using AgrariaOS.Mining;
+using AgrariaOS.Movement;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -23,6 +24,7 @@ internal sealed class WindowManager
     private readonly Action saveConfig;
     private readonly Action<Exception> onTransferFailed;
     private readonly LookupAnythingIntegration lookupAnything;
+    private readonly Func<ClickToMove> getMovement;
     private Dictionary<string, WindowPlacement>? layouts;
     // Last entry is the front window, in both drawing and hit testing.
     private readonly List<OsWindow> windows = new();
@@ -51,7 +53,8 @@ internal sealed class WindowManager
         .Where(button => button.TryGetKeyboard(out _)).ToArray();
 
     internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed,
-        Action saveConfig, Action<Exception> onTransferFailed, LookupAnythingIntegration lookupAnything)
+        Action saveConfig, Action<Exception> onTransferFailed, LookupAnythingIntegration lookupAnything,
+        Func<ClickToMove> getMovement)
     {
         this.config = config;
         this.isVisible = isVisible;
@@ -59,8 +62,10 @@ internal sealed class WindowManager
         this.saveConfig = saveConfig;
         this.onTransferFailed = onTransferFailed;
         this.lookupAnything = lookupAnything;
+        this.getMovement = getMovement;
     }
 
+    internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(lookupAnything, getMovement, FocusWorld));
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything));
     internal void OpenLivestock() => Open(LivestockWindow.WindowId, () => new LivestockWindow());

@@ -15,6 +15,7 @@ internal sealed class Pelicom : IClickableMenu
     private const int BottomEntryCount = 2;
     private const int IconSize = 9;
     private const int IconScale = 3;
+    private const int OverviewEntryIndex = 0;
     private const int MailEntryIndex = 5;
     private const int InventoryEntryIndex = 1;
     private const int LivestockEntryIndex = 2;
@@ -24,7 +25,7 @@ internal sealed class Pelicom : IClickableMenu
     private const int ExitEntryIndex = 8;
     private static readonly (int Emoji, string Label)[] Entries =
     {
-        (107, "Dashboard"),
+        (107, "Overview"),
         (UiStyle.InventoryIcon, "Inventory"),
         (74, "Livestock"),
         (121, "Mining Ledger"),
@@ -53,6 +54,8 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Func<ContextMenuItem[]> minimizedWindows;
     private readonly Action openMiningLedger;
     private readonly Func<bool> isMiningLedgerMinimized;
+    private readonly Action openOverview;
+    private readonly Func<bool> isOverviewMinimized;
     private bool autoHideChecked;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
@@ -62,7 +65,8 @@ internal sealed class Pelicom : IClickableMenu
         Action openLivestock, Func<bool> isLivestockMinimized,
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
         Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
-        Func<ContextMenuItem[]> minimizedWindows, Action openMiningLedger, Func<bool> isMiningLedgerMinimized)
+        Func<ContextMenuItem[]> minimizedWindows, Action openMiningLedger, Func<bool> isMiningLedgerMinimized,
+        Action openOverview, Func<bool> isOverviewMinimized)
     {
         this.config = config;
         this.isEnabled = isEnabled;
@@ -82,6 +86,8 @@ internal sealed class Pelicom : IClickableMenu
         this.minimizedWindows = minimizedWindows;
         this.openMiningLedger = openMiningLedger;
         this.isMiningLedgerMinimized = isMiningLedgerMinimized;
+        this.openOverview = openOverview;
+        this.isOverviewMinimized = isOverviewMinimized;
     }
 
     internal bool IsVisible => isEnabled() && Game1.IsHudDrawn && !Game1.eventUp && Game1.farmEvent == null
@@ -91,12 +97,14 @@ internal sealed class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Inventory, Livestock, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
+    // Overview, Inventory, Livestock, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         if (!IsInteractive || !drawnBounds.Contains(x, y))
             return;
-        if (drawnSlots[MailEntryIndex].Contains(x, y))
+        if (drawnSlots[OverviewEntryIndex].Contains(x, y))
+            openOverview();
+        else if (drawnSlots[MailEntryIndex].Contains(x, y))
             openMail();
         else if (drawnSlots[InventoryEntryIndex].Contains(x, y))
             openInventory();
@@ -182,7 +190,7 @@ internal sealed class Pelicom : IClickableMenu
 
             Point position = new((StripWidth - IconSize * IconScale) / 2, slot.Y + (SlotHeight - IconSize * IconScale) / 2);
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
-            if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
+            if ((i == OverviewEntryIndex && isOverviewMinimized()) || (i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
                 || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
                 || (i == ChatEntryIndex && isChatMinimized()))

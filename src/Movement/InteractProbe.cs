@@ -13,10 +13,11 @@ internal sealed record InteractRequest(ApproachTarget? Move, Func<Point> Tile, F
 /// <summary>Finds right-clickable targets without triggering side effects.</summary>
 internal static class InteractProbe
 {
-    internal static InteractRequest? TryResolve(GameLocation location, Farmer farmer, Point clicked)
+    internal static InteractRequest? TryResolve(GameLocation location, Farmer farmer, Point clicked, bool includeInRange = false)
     {
         // In-range clicks stay with vanilla so facing, horses and HUD priority are unchanged.
-        if (Utility.tileWithinRadiusOfPlayer(clicked.X, clicked.Y, 1, farmer))
+        // Overview reuses the same probe for distant and adjacent rows, so it opts in explicitly.
+        if (!includeInRange && Utility.tileWithinRadiusOfPlayer(clicked.X, clicked.Y, 1, farmer))
             return null;
         if (!location.isTileOnMap(clicked))
             return null;

@@ -66,7 +66,8 @@ public sealed partial class ModEntry
     {
         if (!HasDesktopFocus)
             return;
-        clickToMove.Value.Cancel();
+        // Pause, don't clear: the queue (e.g. 5 rocks) resumes after the window closes.
+        // Before/AfterUpdate already pause on !canMove, so just halt movement here.
         // Don't change CanMove/freezeControls: vanilla and other mods own those flags,
         // and desktop transfers still need the normal player-free context.
         Game1.player.Halt();

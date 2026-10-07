@@ -249,6 +249,11 @@ public sealed partial class ModEntry
             var request = Movement.InteractProbe.TryResolve(Game1.currentLocation, Game1.player, tile);
             if (request == null)
                 return false;
+            // Ctrl+right queues explicitly; plain right-clicks auto-queue while a route
+            // runs so "right-click 2 NPCs" plays both dialogues in Local in order.
+            bool explicitQueue = Helper.Input.IsDown(SButton.LeftControl) || Helper.Input.IsDown(SButton.RightControl);
+            if (explicitQueue || clickToMove.Value.IsBusy)
+                return clickToMove.Value.EnqueueInteract(request, tile);
             return clickToMove.Value.StartInteract(request, tile);
         }
         catch (Exception ex)
