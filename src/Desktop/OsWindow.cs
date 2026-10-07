@@ -25,6 +25,7 @@ internal abstract class OsWindow
     internal abstract string Id { get; }
     internal abstract string Title { get; }
     internal abstract int Icon { get; }
+    internal virtual bool IsValid => true;
     internal virtual Point DefaultSize => new(420, 260);
     internal bool IsMinimized { get; set; }
     internal Rectangle Bounds { get; private set; }

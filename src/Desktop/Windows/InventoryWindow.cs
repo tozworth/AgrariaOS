@@ -1,8 +1,10 @@
 using AgrariaOS.Configuration;
 using AgrariaOS.UI;
+using AgrariaOS.Interactions;
 using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Objects;
 using StardewValley.Tools;
@@ -12,6 +14,7 @@ namespace AgrariaOS.Desktop.Windows;
 internal sealed class InventoryWindow : OsWindow
 {
     internal const string WindowId = "Inventory";
+    internal const string ChestWindowId = "ChestInventory";
     private const int Padding = 4;
     private const int IconSize = 20;
     private const int ScrollbarWidth = 10;
@@ -35,9 +38,46 @@ internal sealed class InventoryWindow : OsWindow
     private int? scrollDragOffset;
     private SpriteFont? measuredFont;
     private int glyphHeight;
+    private Chest? chest;
+    private GameLocation? chestLocation;
+    private Farmer? chestFarmer;
+    private uint chestDay;
+    private readonly InventorySelection selection = new();
 
-    internal override string Id => WindowId;
-    internal override string Title => "Inventory";
+    internal Chest? Chest => chest;
+    internal string? TransferStatus { get; set; }
+    internal bool ContainsDropPoint(Point cursor) => rowsBounds.Contains(cursor);
+    internal Item[] SelectedItems => selection.InSlotOrder(items);
+
+    internal InventoryWindow(Chest? chest = null)
+    {
+        if (chest != null)
+            ShowChest(chest);
+    }
+
+    internal void ShowChest(Chest target)
+    {
+        if (ReferenceEquals(chest, target) && IsValid)
+            return;
+        EndContentDrag();
+        firstRow = 0;
+        items.Clear();
+        itemRowBounds.Clear();
+        selection.Clear();
+        TransferStatus = null;
+        chest = target;
+        chestLocation = Game1.currentLocation;
+        chestFarmer = Game1.player;
+        chestDay = Game1.stats.DaysPlayed;
+    }
+
+    internal override string Id => chest == null ? WindowId : ChestWindowId;
+    internal override string Title => chest == null ? "Inventory" : $"{chest.DisplayName} Inventory";
+    internal override bool IsValid => chest == null || (Context.IsWorldReady
+        && Game1.player == chestFarmer && Game1.currentLocation == chestLocation
+        && Game1.stats.DaysPlayed == chestDay
+        && chestLocation.Objects.TryGetValue(chest.TileLocation, out var placed)
+        && ReferenceEquals(placed, chest));
     internal override int Icon => UiStyle.InventoryIcon;
     internal override Point DefaultSize => new(600, 420);
     private int MaxFirstRow => Math.Max(0, items.Count - visibleRows);
@@ -47,14 +87,15 @@ internal sealed class InventoryWindow : OsWindow
 
     protected override void DrawContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config)
     {
-        // Preserve backpack slot order and separate stacks; never mutate the player's items.
+        // Rendering only reads the source; transfers run under the chest mutex.
         items.Clear();
         itemRowBounds.Clear();
-        foreach (Item? item in Game1.player.Items)
+        foreach (Item? item in chest?.GetItemsForPlayer() ?? Game1.player.Items)
         {
             if (item != null)
                 items.Add(item);
         }
+        selection.Refresh(items);
 
         int rowHeight = GetRowHeight(Game1.smallFont, config.FontScale);
         if (contentBounds.Height < rowHeight * 3 + Padding * 2 + 1)
@@ -111,7 +152,9 @@ internal sealed class InventoryWindow : OsWindow
             Item item = items[i];
             Rectangle row = new(rowsBounds.X, rowsBounds.Y + (i - firstRow) * rowHeight, tableWidth, rowHeight);
             itemRowBounds.Add(row);
-            if (row.Contains(cursor))
+            if (selection.Contains(item))
+                batch.Draw(Game1.staminaRect, row, new Color(54, 101, 129) * config.Opacity);
+            else if (row.Contains(cursor))
                 batch.Draw(Game1.staminaRect, row, UiStyle.Border * (config.Opacity * 0.55f));
             else if ((i & 1) != 0)
                 batch.Draw(Game1.staminaRect, row, Color.White * (config.Opacity * 0.025f));
@@ -127,7 +170,7 @@ internal sealed class InventoryWindow : OsWindow
         }
 
         if (items.Count == 0)
-            DrawCenteredText(batch, "Backpack empty.", rowsBounds, UiStyle.Muted, config);
+            DrawCenteredText(batch, chest == null ? "Backpack empty." : "Chest empty.", rowsBounds, UiStyle.Muted, config);
         if (!scrollThumb.IsEmpty)
         {
             batch.Draw(Game1.staminaRect, scrollTrack, UiStyle.Border * (config.Opacity * 0.45f));
@@ -135,14 +178,77 @@ internal sealed class InventoryWindow : OsWindow
         }
 
         Rectangle footer = new(rowsBounds.X, contentBounds.Bottom - Padding - rowHeight, tableWidth, rowHeight);
-        string summary = $"{items.Count} / {Game1.player.MaxItems} slots";
+        string summary = $"{items.Count} / {chest?.GetActualCapacity() ?? Game1.player.MaxItems} slots";
+        if (selection.Count > 0)
+            summary += $"   |   {selection.Count} selected";
         if (MaxFirstRow > 0 && visibleRows > 0)
             summary += $"   |   {firstRow + 1}-{endRow} of {items.Count}";
+        if (TransferStatus != null)
+            summary = TransferStatus;
         DrawCellText(batch, summary, footer, UiStyle.Muted, config);
     }
 
+    internal Item? SelectRow(Point cursor, bool control, bool shift)
+    {
+        int row = itemRowBounds.FindIndex(bounds => bounds.Contains(cursor));
+        if (row < 0 || firstRow + row >= items.Count)
+        {
+            if (rowsBounds.Contains(cursor) && !control && !shift)
+            {
+                selection.Clear();
+                TransferStatus = null;
+            }
+            return null;
+        }
+        Item item = items[firstRow + row];
+        // Ignore stale rows whose stack was removed since the last render.
+        var liveItems = (chest?.GetItemsForPlayer() ?? Game1.player.Items)
+            .Where(current => current != null).ToArray();
+        if (!liveItems.Any(current => ReferenceEquals(current, item)))
+            return null;
+        selection.Click(item, liveItems, control, shift);
+        TransferStatus = null;
+        return selection.Contains(item) ? item : null;
+    }
+
+    internal void CollapseSelection(Item item) => selection.SelectOnly(item);
+
+    internal void SelectAll()
+    {
+        selection.SelectAll((chest?.GetItemsForPlayer() ?? Game1.player.Items)
+            .Where(item => item != null).ToArray());
+        TransferStatus = null;
+    }
+
+    internal void DrawItemDrag(SpriteBatch batch, Point cursor, Item[] draggedItems, bool validDrop, ModConfig config)
+    {
+        int count = draggedItems.Length;
+        if (count == 0)
+            return;
+        string label = $"{count} stack{(count == 1 ? "" : "s")}";
+        int width = (int)MathF.Ceiling(Game1.smallFont.MeasureString(label).X * config.FontScale) + IconSize + Padding * 4 + 1;
+        Rectangle badge = new(cursor.X + 16, cursor.Y + 16, Math.Min(width, Game1.uiViewport.Width),
+            GetRowHeight(Game1.smallFont, config.FontScale) + Padding * 2);
+        badge.X = Math.Clamp(badge.X, 0, Math.Max(0, Game1.uiViewport.Width - badge.Width));
+        badge.Y = Math.Clamp(badge.Y, 0, Math.Max(0, Game1.uiViewport.Height - badge.Height));
+        batch.Draw(Game1.staminaRect, badge, UiStyle.Background * config.Opacity);
+        UiStyle.DrawBorder(batch, badge, config.Opacity);
+        DrawItemIcon(batch, draggedItems[0], new Rectangle(badge.X + Padding,
+            badge.Y + (badge.Height - IconSize) / 2, IconSize, IconSize), config.Opacity);
+        Rectangle textBounds = new(badge.X + IconSize + Padding, badge.Y, badge.Width - IconSize - Padding, badge.Height);
+        DrawCellText(batch, label, textBounds,
+            validDrop ? new Color(137, 221, 151) : UiStyle.Muted, config);
+    }
+
+    internal void DrawDropTarget(SpriteBatch batch, ModConfig config)
+    {
+        Color color = new Color(137, 221, 151) * config.Opacity;
+        batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Y, rowsBounds.Width, 1), color);
+        batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Bottom - 1, rowsBounds.Width, 1), color);
+    }
+
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
-        => itemRowBounds.Any(row => row.Contains(cursor)) ? ItemMenu : null;
+        => chest == null && itemRowBounds.Any(row => row.Contains(cursor)) ? ItemMenu : null;
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick)
     {

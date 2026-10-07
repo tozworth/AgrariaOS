@@ -58,6 +58,33 @@ not verify visual behavior. Verify in-game with Stardew 1.6.15 and SMAPI 4.5.2:
 - Right-click visible Inventory item rows, including after wheel/thumb scrolling: Split and
   Jettison should appear and close on selection without changing items or quantities. Headers,
   empty rows, footer and scrollbar should not open an item menu.
+- Right-click empty/populated wooden, stone, big and Junimo chests within vanilla reach: expect
+  the Inventory table with chest contents in slot order and actual capacity. Check
+  Price Catalogue values, wheel/thumb scrolling and column resizing at UI/text scales 1/2.
+  Right-click chest rows and hold another chest when opening: no item menus or chest replacement.
+  Gift boxes and reward chests should keep their vanilla behavior.
+- Open backpack and chest views together; each must show its own contents. Switch chests,
+  minimize and right-click to restore, drag/resize/close/reopen and check saved placement.
+  Other players' changes should update the live view without an inventory lock. Warping,
+  starting a new day or removing the chest should close it, including while minimized.
+  Hold right-click and check HUD/window input priority and reach; F8 restores vanilla access.
+  Split-screen players should have separate chest views and the correct Junimo contents.
+- In both inventories, test plain selection, Ctrl toggles, Shift ranges in either direction,
+  Ctrl+Shift additive ranges, and plain-clicking a selected group versus dragging it. Check
+  distinct identical stacks, anchors after scrolling, live item removal and selection highlights.
+- Press Ctrl+A with either Control key in the focused backpack/chest window: select all occupied
+  slots, including offscreen rows, and drag the full selection. Check empty inventories, switching
+  focus, and that outside clicks, Chat, popups, minimized windows and F8 do not select inventory items.
+- Arrange chest/backpack windows and drag one/multiple stacks both ways into the table body,
+  including empty tables. Check the icon/count preview, drop highlight, original slot order,
+  qualities, tool identity, partial/full merges, capacity limits and unaccepted source remainders.
+  Mini shipping bins accept shippable items only; Enrichers accept fertilizers only.
+- Drop on headers/footer, the source, another window or the world, or cancel with Escape,
+  F8, menus, resize, warp, new day, chest removal or return to title: no transfer or world action.
+  Walk beyond vanilla reach before dropping: no transfer. Opening a busy chest should still
+  show contents; transfers should report busy without stealing its lock. In multiplayer and
+  split-screen, test simultaneous transfers and Junimo chests: no loss, duplication or stuck
+  locks. Close/switch a chest while waiting for a lock; the pending transfer must cancel.
 - Check context menus draw above overlapping windows and stay inside viewport edges at UI/text
   scales 1 and 2. Outside clicks and Escape should dismiss without triggering underlying actions;
   wheel input should not scroll content while a menu is open. F8, vanilla menus, viewport resize

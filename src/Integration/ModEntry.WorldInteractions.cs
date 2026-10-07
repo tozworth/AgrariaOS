@@ -32,6 +32,10 @@ public sealed partial class ModEntry
             harmony.Patch(AccessTools.DeclaredMethod(typeof(Phone), nameof(Phone.checkForAction)),
                 prefix: new HarmonyMethod(typeof(ModEntry), nameof(TelephoneActionPrefix)),
                 finalizer: new HarmonyMethod(typeof(ModEntry), nameof(TelephoneActionFinalizer)));
+            harmony.Patch(AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.checkForAction)),
+                prefix: new HarmonyMethod(typeof(ModEntry), nameof(ChestActionPrefix)));
+            harmony.Patch(AccessTools.DeclaredMethod(typeof(Chest), nameof(Chest.performObjectDropInAction)),
+                prefix: new HarmonyMethod(typeof(ModEntry), nameof(ChestDropInPrefix)));
             harmony.Patch(AccessTools.DeclaredMethod(typeof(GameLocation), nameof(GameLocation.createQuestionDialogue),
                     new[] { typeof(string), typeof(Response[]), typeof(GameLocation.afterQuestionBehavior), typeof(NPC) }),
                 prefix: new HarmonyMethod(typeof(ModEntry), nameof(CallbackQuestionPrefix)));
@@ -40,7 +44,7 @@ public sealed partial class ModEntry
             harmony.Patch(AccessTools.DeclaredMethod(typeof(GameLocation), nameof(GameLocation.ShowPagedResponses)),
                 prefix: new HarmonyMethod(typeof(ModEntry), nameof(TelephoneDirectoryPrefix)));
             worldInteractionPatchesInstalled = true;
-            Monitor.Log("World right-click menus ready (TV, telephone and bus tickets).", LogLevel.Info);
+            Monitor.Log("World right-click interactions ready (chest inventories, TV, telephone and bus tickets).", LogLevel.Info);
         }
         catch (Exception ex)
         {
@@ -78,6 +82,42 @@ public sealed partial class ModEntry
     }
 
     private static void WorldActionFinalizer(bool __state) => Instance.rightClickAction.Value = __state;
+
+    private bool CanRouteChest(Chest chest, Farmer who) => CanRouteWorldInteraction
+        && who == Game1.player && chest.playerChest.Value && !chest.giftbox.Value
+        && Game1.currentLocation.Objects.TryGetValue(chest.TileLocation, out var placed)
+        && ReferenceEquals(placed, chest);
+
+    private static bool ChestActionPrefix(Chest __instance, Farmer who, bool justCheckingForActivity,
+        ref bool __result)
+    {
+        ModEntry mod = Instance;
+        if (justCheckingForActivity || !mod.CanRouteChest(__instance, who))
+            return true;
+        try
+        {
+            // The desktop reads live contents; transfers acquire their own short-lived lock.
+            mod.windowManager.Value.OpenChestInventory(__instance);
+            mod.Helper.Input.Suppress(SButton.MouseRight);
+            __result = true;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            mod.OnWorldInteractionFailed(ex);
+            return true;
+        }
+    }
+
+    private static bool ChestDropInPrefix(Chest __instance, Farmer who, ref bool __result)
+    {
+        if (!Instance.CanRouteChest(__instance, who))
+            return true;
+        // GameLocation.checkAction probes and attempts drop-in before checkForAction when
+        // an item is held. Block both so a held replacement chest cannot mutate this view.
+        __result = false;
+        return false;
+    }
 
     private static bool TelephoneActionPrefix(Phone __instance, Farmer who, bool justCheckingForActivity,
         ref bool __result, out Phone? __state)

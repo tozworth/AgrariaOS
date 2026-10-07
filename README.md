@@ -5,6 +5,19 @@ A SMAPI mod bringing a compact, EVE-inspired HUD and desktop windows to Stardew 
 The Pelicom rail opens Inventory, Mail, Chat and Notifications. Windows support dragging, resizing,
 minimizing and restoring, with placement saved per farmer. Other rail entries are placeholders.
 
+Right-click a placed storage chest to open its live contents in the same Inventory table,
+including big and Junimo chests. Open Inventory from Pelicom and arrange the two windows to
+transfer items. Click a row to select it, Ctrl-click to toggle stacks, Shift-click for a range,
+or Ctrl+Shift-click to add a range. Ctrl+A selects every stack in the focused inventory window,
+including rows outside the visible area. Drag a selected row into the other window's table body to
+move the selected stacks in slot order. Stacks merge using vanilla rules; full inventories and
+special chest filters leave unaccepted items in the source. Transfers require vanilla reach and
+briefly acquire the chest's multiplayer lock. Escape or dropping elsewhere cancels the drag.
+Chest item menus and replacement while holding another chest remain disabled. Right-click another
+chest to switch the view, or the same chest to restore it after minimizing. Leaving the location,
+starting a new day or removing the chest closes the view. F8 keeps vanilla chest interactions;
+gift boxes and reward chests retain their original behavior.
+
 Right-click the Pelicom rail for a checkable Auto-hide placeholder (session-only, with no hiding
 behavior), or an Inventory item row for Split and Jettison placeholders. These item actions do
 not change the backpack. Click outside or press Escape to dismiss a context menu.
@@ -57,7 +70,7 @@ Target: .NET 6, with game/SMAPI/Harmony references supplied by ModBuildConfig.
 
 - `src/ModEntry.cs`: SMAPI events, per-screen state and F8 fallback.
 - `src/Integration/`: narrow Harmony patches for HUD elements/notifications, world mouse interactions and dialogue routing event integration.
-- `src/Interactions/`: extensible world context-menu providers using native choices and continuations.
+- `src/Interactions/`: world context-menu providers, inventory selection and stack transfer handling.
 - `src/Configuration/`: HUD settings and saved window placement.
 - `src/Hud/`: status readout, toolbar/vitals, security colors and notification bubbles.
 - `src/Desktop/`: Pelicom rail, window lifecycle, input priority and shared window chrome.

@@ -2,12 +2,14 @@ using AgrariaOS.Configuration;
 using AgrariaOS.Chat;
 using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Notifications;
+using AgrariaOS.Interactions;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Objects;
 
 namespace AgrariaOS.Desktop;
 
@@ -17,6 +19,7 @@ internal sealed class WindowManager
     private readonly Func<bool> isVisible;
     private readonly Action<Exception> onDrawFailed;
     private readonly Action saveConfig;
+    private readonly Action<Exception> onTransferFailed;
     private Dictionary<string, WindowPlacement>? layouts;
     // Last entry is the front window, in both drawing and hit testing.
     private readonly List<OsWindow> windows = new();
@@ -30,20 +33,37 @@ internal sealed class WindowManager
     private Point resizeStartCursor;
     private Rectangle resizeStartBounds;
     private OsWindow? keyboardWindow;
+    private OsWindow? focusedWindow;
+    private InventoryWindow? itemDragSource;
+    private Item[] draggedItems = Array.Empty<Item>();
+    private Item? pressedItem;
+    private Point itemDragStart;
+    private bool itemDragActive;
+    private bool collapseSelectionOnRelease;
+    private (int Version, InventoryWindow Source, InventoryWindow Target)? pendingTransfer;
+    private bool HasPendingTransfer => pendingTransfer.HasValue;
+    private int transferVersion;
     private KeyboardDispatcher? keyboardDispatcher;
     private static readonly SButton[] KeyboardButtons = Enum.GetValues<SButton>()
         .Where(button => button.TryGetKeyboard(out _)).ToArray();
 
-    internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed, Action saveConfig)
+    internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed,
+        Action saveConfig, Action<Exception> onTransferFailed)
     {
         this.config = config;
         this.isVisible = isVisible;
         this.onDrawFailed = onDrawFailed;
         this.saveConfig = saveConfig;
+        this.onTransferFailed = onTransferFailed;
     }
 
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow());
+    internal void OpenChestInventory(Chest chest)
+    {
+        Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(chest));
+        ((InventoryWindow)windows.Last()).ShowChest(chest);
+    }
     internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));
     internal void OpenChat(ChatSession session, bool showLocal = false)
     {
@@ -54,6 +74,8 @@ internal sealed class WindowManager
 
     internal void Open(string id, Func<OsWindow> create)
     {
+        CancelPendingTransfer();
+        EndDrag();
         contextMenu.Close();
         ClearKeyboardFocus();
         OsWindow? window = windows.FirstOrDefault(window => window.Id == id);
@@ -73,6 +95,7 @@ internal sealed class WindowManager
         window.IsMinimized = false;
         windows.Remove(window);
         windows.Add(window);
+        focusedWindow = window;
     }
 
     internal bool IsMinimized(string id) => windows.Any(window => window.Id == id && window.IsMinimized);
@@ -83,17 +106,21 @@ internal sealed class WindowManager
 
     internal bool ShowContextMenu(Point cursor, ContextMenuItem[] items, string? title = null, Func<bool>? isValid = null)
     {
+        CancelPendingTransfer();
         EndDrag();
         ClearKeyboardFocus();
         return contextMenu.Open(cursor, items, config, title, isValid);
     }
 
-    internal bool ReceiveClick(Point cursor, bool leftClick)
+    internal bool ReceiveClick(Point cursor, bool leftClick, IInputHelper input)
     {
+        if (!leftClick)
+            EndDrag();
         if (CanReceiveInput && contextMenu.ReceiveClick(cursor, leftClick))
             return true;
         OsWindow? window = GetWindowAt(cursor);
         ClearKeyboardFocus();
+        focusedWindow = window;
         if (window == null)
             return false;
 
@@ -106,12 +133,14 @@ internal sealed class WindowManager
             {
                 RememberPlacement(window);
                 windows.Remove(window);
+                focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
                 EndDrag();
             }
             else if (window.MinimizeBounds.Contains(cursor))
             {
                 RememberPlacement(window);
                 window.IsMinimized = true;
+                focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
                 EndDrag();
             }
             else if (window.GetResizeEdges(cursor) is var edges && edges != WindowResizeEdges.None)
@@ -135,6 +164,19 @@ internal sealed class WindowManager
                     keyboardDispatcher = Game1.keyboardDispatcher;
                 }
                 contentDragWindow = window;
+                if (window is InventoryWindow inventory && !HasPendingTransfer)
+                {
+                    bool control = IsHeld(input, SButton.LeftControl) || IsHeld(input, SButton.RightControl);
+                    bool shift = IsHeld(input, SButton.LeftShift) || IsHeld(input, SButton.RightShift);
+                    pressedItem = inventory.SelectRow(cursor, control, shift);
+                    if (pressedItem != null)
+                    {
+                        itemDragSource = inventory;
+                        draggedItems = inventory.SelectedItems;
+                        itemDragStart = cursor;
+                        collapseSelectionOnRelease = !control && !shift;
+                    }
+                }
             }
         }
         else
@@ -169,26 +211,45 @@ internal sealed class WindowManager
         if (!CanReceiveInput)
             return null;
 
-        return drawnWindows.LastOrDefault(window => !window.IsMinimized && windows.Contains(window) && window.Bounds.Contains(cursor));
+        return drawnWindows.LastOrDefault(window => window.IsValid && !window.IsMinimized
+            && windows.Contains(window) && window.Bounds.Contains(cursor));
     }
 
     internal void Update(IInputHelper input)
     {
+        foreach (OsWindow window in windows.Where(window => !window.IsValid).ToArray())
+        {
+            CancelPendingTransfer();
+            EndDrag();
+            RememberPlacement(window);
+            windows.Remove(window);
+            if (ReferenceEquals(focusedWindow, window))
+                focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
+        }
         contextMenu.Update();
         if (!CanReceiveInput)
             contextMenu.Close();
         RefreshKeyboardFocus();
         // Suppression reports the button released to the game on subsequent ticks.
         // SMAPI retains the suppression flag until the physical button is released.
-        bool leftButtonHeld = input.IsDown(SButton.MouseLeft) || input.IsSuppressed(SButton.MouseLeft);
-        if (!leftButtonHeld || !isVisible() || Game1.IsChatting
-            || drawnViewport != new Point(Game1.uiViewport.Width, Game1.uiViewport.Height))
+        bool leftButtonHeld = IsHeld(input, SButton.MouseLeft);
+        if (!CanReceiveInput)
         {
+            focusedWindow = null;
+            CancelPendingTransfer();
             EndDrag();
             return;
         }
 
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+        if (!leftButtonHeld)
+        {
+            FinishItemDrag(cursor);
+            EndDrag();
+            return;
+        }
+        if (itemDragSource != null)
+            itemDragActive |= Math.Abs(cursor.X - itemDragStart.X) >= 5 || Math.Abs(cursor.Y - itemDragStart.Y) >= 5;
         if (draggedWindow != null)
             draggedWindow.MoveTo(cursor - dragOffset);
         resizedWindow?.ResizeFrom(resizeStartBounds, cursor - resizeStartCursor, resizedWindow.ActiveResizeEdges);
@@ -207,6 +268,146 @@ internal sealed class WindowManager
         resizedWindow = null;
         contentDragWindow?.EndContentDrag();
         contentDragWindow = null;
+        itemDragSource = null;
+        draggedItems = Array.Empty<Item>();
+        pressedItem = null;
+        itemDragActive = false;
+        collapseSelectionOnRelease = false;
+    }
+
+    private static bool IsHeld(IInputHelper input, SButton button) => input.IsDown(button) || input.IsSuppressed(button);
+
+    private InventoryWindow? GetInventoryDropTarget(Point cursor)
+    {
+        if (itemDragSource == null || !itemDragSource.IsValid || HasPendingTransfer
+            || !Context.IsPlayerFree || GetWindowAt(cursor) is not InventoryWindow target
+            || ReferenceEquals(target, itemDragSource) || !target.ContainsDropPoint(cursor)
+            || (itemDragSource.Chest == null) == (target.Chest == null))
+            return null;
+        Chest chest = (itemDragSource.Chest ?? target.Chest)!;
+        return Utility.tileWithinRadiusOfPlayer((int)chest.TileLocation.X, (int)chest.TileLocation.Y, 1, Game1.player)
+            ? target : null;
+    }
+
+    private void FinishItemDrag(Point cursor)
+    {
+        if (itemDragSource == null)
+            return;
+        itemDragActive |= Math.Abs(cursor.X - itemDragStart.X) >= 5 || Math.Abs(cursor.Y - itemDragStart.Y) >= 5;
+        if (itemDragActive)
+        {
+            if (GetInventoryDropTarget(cursor) is { } target)
+                TransferItems(itemDragSource, target, draggedItems);
+        }
+        else if (collapseSelectionOnRelease && pressedItem != null)
+            itemDragSource.CollapseSelection(pressedItem);
+    }
+
+    private void CancelPendingTransfer()
+    {
+        transferVersion++;
+        if (pendingTransfer is { } pending)
+            pending.Source.TransferStatus = pending.Target.TransferStatus = "Transfer canceled.";
+        // An invalid/removed chest may never tick its mutex again. Let the UI proceed;
+        // any late acquisition still validates its version and releases without moving items.
+        pendingTransfer = null;
+    }
+
+    private void TransferItems(InventoryWindow source, InventoryWindow target, Item[] requested)
+    {
+        Chest chest = (source.Chest ?? target.Chest)!;
+        var mutex = chest.GetMutex();
+        void SetStatus(string message) => source.TransferStatus = target.TransferStatus = message;
+        // Never borrow/release a lock already owned by a vanilla menu or another operation.
+        if (mutex.IsLocked())
+        {
+            SetStatus("Chest busy. Try again.");
+            return;
+        }
+        Farmer farmer = Game1.player;
+        GameLocation location = Game1.currentLocation;
+        uint day = Game1.stats.DaysPlayed;
+        Chest? sourceChest = source.Chest;
+        Chest? targetChest = target.Chest;
+        Point viewport = drawnViewport;
+        int version = ++transferVersion;
+        pendingTransfer = (version, source, target);
+        void CompletePending()
+        {
+            if (pendingTransfer?.Version == version)
+                pendingTransfer = null;
+        }
+        SetStatus("Transferring...");
+        bool IsValid() => version == transferVersion && CanReceiveInput && Context.IsPlayerFree
+            && Game1.player == farmer && Game1.currentLocation == location && Game1.stats.DaysPlayed == day
+            && viewport == drawnViewport && source.IsValid && target.IsValid
+            && !source.IsMinimized && !target.IsMinimized && windows.Contains(source) && windows.Contains(target)
+            && ReferenceEquals(source.Chest, sourceChest) && ReferenceEquals(target.Chest, targetChest)
+            && Utility.tileWithinRadiusOfPlayer((int)chest.TileLocation.X, (int)chest.TileLocation.Y, 1, farmer);
+        try
+        {
+            mutex.RequestLock(() =>
+            {
+                try
+                {
+                    if (!IsValid())
+                    {
+                        if (version == transferVersion)
+                            SetStatus("Transfer canceled.");
+                        return;
+                    }
+                    var sourceItems = sourceChest?.GetItemsForPlayer(farmer.UniqueMultiplayerID) ?? farmer.Items;
+                    var targetItems = targetChest?.GetItemsForPlayer(farmer.UniqueMultiplayerID) ?? farmer.Items;
+                    bool Accepts(Item item) => targetChest?.SpecialChestType switch
+                    {
+                        Chest.SpecialChestTypes.MiniShippingBin => Utility.highlightShippableObjects(item),
+                        Chest.SpecialChestTypes.Enricher => StardewValley.Object.HighlightFertilizers(item),
+                        _ => true
+                    };
+                    Item? Insert(Item item) => targetChest != null ? targetChest.addItem(item) : farmer.addItemToInventory(item);
+                    void Remove(Item item)
+                    {
+                        if (sourceChest == null)
+                            farmer.removeItemFromInventory(item);
+                        else
+                            sourceItems[InventoryTransferBatch.IndexOf(sourceItems, item)] = null!;
+                    }
+                    void Restored(Item item)
+                    {
+                        if (sourceChest == null && ReferenceEquals(farmer.CurrentItem, item))
+                            item.actionWhenBeingHeld(farmer);
+                    }
+                    int moved = InventoryTransferBatch.Move(sourceItems, targetItems, requested, Accepts, Insert, Remove, Restored);
+                    sourceChest?.clearNulls();
+                    bool remaining = requested.Any(item => InventoryTransferBatch.IndexOf(sourceItems, item) >= 0);
+                    SetStatus(remaining ? "Some stacks stayed: full or ineligible." : $"Moved {moved} stack{(moved == 1 ? "" : "s")}.");
+                    if (moved > 0)
+                        Game1.playSound("Ship");
+                }
+                catch (Exception ex)
+                {
+                    SetStatus("Transfer failed.");
+                    onTransferFailed(ex);
+                }
+                finally
+                {
+                    // Release only the lock acquired for this request, including canceled requests.
+                    mutex.ReleaseLock();
+                    CompletePending();
+                }
+            }, () =>
+            {
+                CompletePending();
+                if (version == transferVersion)
+                    SetStatus("Chest busy. Try again.");
+            });
+        }
+        catch (Exception ex)
+        {
+            CompletePending();
+            SetStatus("Transfer failed.");
+            onTransferFailed(ex);
+        }
     }
 
     private void RememberPlacement(OsWindow window)
@@ -222,6 +423,8 @@ internal sealed class WindowManager
 
     internal void InvalidateLayout()
     {
+        focusedWindow = null;
+        CancelPendingTransfer();
         contextMenu.Close();
         ClearKeyboardFocus();
         drawnWindows.Clear();
@@ -233,6 +436,8 @@ internal sealed class WindowManager
         drawnWindows.Clear();
         if (!isVisible())
         {
+            focusedWindow = null;
+            CancelPendingTransfer();
             contextMenu.Close();
             ClearKeyboardFocus();
             EndDrag();
@@ -253,11 +458,17 @@ internal sealed class WindowManager
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             foreach (OsWindow window in windows)
             {
-                if (!window.IsMinimized && window.Layout(workArea, titleHeight, config))
+                if (window.IsValid && !window.IsMinimized && window.Layout(workArea, titleHeight, config))
                 {
                     window.Draw(batch, config, cursor);
                     drawnWindows.Add(window);
                 }
+            }
+            if (itemDragActive && itemDragSource != null)
+            {
+                InventoryWindow? dropTarget = GetInventoryDropTarget(cursor);
+                dropTarget?.DrawDropTarget(batch, config);
+                itemDragSource.DrawItemDrag(batch, cursor, draggedItems, dropTarget != null, config);
             }
             contextMenu.Draw(batch, config, cursor);
         }
@@ -302,6 +513,21 @@ internal sealed class WindowManager
 
     internal bool ReceiveKeyboardButton(SButton button, IInputHelper input)
     {
+        if (CanReceiveInput && !contextMenu.IsOpen && Game1.game1.HasKeyboardFocus()
+            && button == SButton.A && (IsHeld(input, SButton.LeftControl) || IsHeld(input, SButton.RightControl))
+            && focusedWindow is InventoryWindow inventory && inventory.IsValid && !inventory.IsMinimized
+            && drawnWindows.Contains(inventory) && windows.LastOrDefault(window => !window.IsMinimized) == inventory)
+        {
+            EndDrag();
+            inventory.SelectAll();
+            return true;
+        }
+        if (CanReceiveInput && button == SButton.Escape && (itemDragSource != null || HasPendingTransfer))
+        {
+            CancelPendingTransfer();
+            EndDrag();
+            return true;
+        }
         if (CanReceiveInput && contextMenu.IsOpen && button == SButton.Escape)
         {
             contextMenu.Close();

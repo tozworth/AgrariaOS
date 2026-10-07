@@ -35,7 +35,8 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId),
         (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
-        () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed, () => Instance.Helper.WriteConfig(Instance.config)));
+        () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
+        () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed));
     private ModConfig config = null!;
     private bool patchInstalled;
     private bool toolbarPatchInstalled;
@@ -86,8 +87,7 @@ public sealed partial class ModEntry : Mod
         {
             foreach (var screen in windowManager.GetActiveValues())
             {
-                screen.Value.ClearKeyboardFocus();
-                screen.Value.EndDrag();
+                screen.Value.InvalidateLayout();
             }
             osHudActive.ResetAllScreens();
             statusReadoutRenderer.ResetAllScreens();
@@ -110,7 +110,7 @@ public sealed partial class ModEntry : Mod
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             bool leftClick = e.Button == SButton.MouseLeft;
-            if (windowManager.Value.ReceiveClick(cursor, leftClick))
+            if (windowManager.Value.ReceiveClick(cursor, leftClick, Helper.Input))
             {
                 Helper.Input.Suppress(e.Button);
                 return;
@@ -162,6 +162,13 @@ public sealed partial class ModEntry : Mod
     {
         osHudActive.Value = false;
         Monitor.Log($"Window drawing failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
+    }
+
+    private void OnInventoryTransferFailed(Exception ex)
+    {
+        osHudActive.Value = false;
+        windowManager.Value.InvalidateLayout();
+        Monitor.Log($"Inventory transfer failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
     }
 
     // Suppress vanilla bars even while a menu temporarily hides the compact toolbar.
