@@ -62,6 +62,7 @@ internal sealed class WindowManager
 
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything));
+    internal void OpenLivestock() => Open(LivestockWindow.WindowId, () => new LivestockWindow());
     internal void OpenChestInventory(Chest chest)
     {
         Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest, lookupAnything));

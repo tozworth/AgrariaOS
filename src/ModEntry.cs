@@ -33,6 +33,8 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.IsMinimized(MailWindow.WindowId),
         () => Instance.windowManager.Value.OpenInventory(),
         () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId),
+        () => Instance.windowManager.Value.OpenLivestock(),
+        () => Instance.windowManager.Value.IsMinimized(LivestockWindow.WindowId),
         () => Instance.windowManager.Value.OpenNotifications(Instance.notificationHistory.Value),
         () => Instance.windowManager.Value.IsMinimized(NotificationsWindow.WindowId),
         () => Instance.notificationHistory.Value.UnreadCount,

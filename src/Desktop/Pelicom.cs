@@ -17,6 +17,7 @@ internal sealed class Pelicom : IClickableMenu
     private const int IconScale = 3;
     private const int MailEntryIndex = 5;
     private const int InventoryEntryIndex = 1;
+    private const int LivestockEntryIndex = 2;
     private const int ChatEntryIndex = 6;
     private const int NotificationsEntryIndex = 7;
     private const int ExitEntryIndex = 8;
@@ -40,6 +41,8 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Func<bool> isMailMinimized;
     private readonly Action openInventory;
     private readonly Func<bool> isInventoryMinimized;
+    private readonly Action openLivestock;
+    private readonly Func<bool> isLivestockMinimized;
     private readonly Action openNotifications;
     private readonly Func<bool> isNotificationsMinimized;
     private readonly Func<int> unreadNotifications;
@@ -53,6 +56,7 @@ internal sealed class Pelicom : IClickableMenu
 
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
         Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized,
+        Action openLivestock, Func<bool> isLivestockMinimized,
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
         Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
         Func<ContextMenuItem[]> minimizedWindows)
@@ -64,6 +68,8 @@ internal sealed class Pelicom : IClickableMenu
         this.isMailMinimized = isMailMinimized;
         this.openInventory = openInventory;
         this.isInventoryMinimized = isInventoryMinimized;
+        this.openLivestock = openLivestock;
+        this.isLivestockMinimized = isLivestockMinimized;
         this.openNotifications = openNotifications;
         this.isNotificationsMinimized = isNotificationsMinimized;
         this.unreadNotifications = unreadNotifications;
@@ -80,7 +86,7 @@ internal sealed class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Inventory, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
+    // Inventory, Livestock, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         if (!IsInteractive || !drawnBounds.Contains(x, y))
@@ -89,6 +95,8 @@ internal sealed class Pelicom : IClickableMenu
             openMail();
         else if (drawnSlots[InventoryEntryIndex].Contains(x, y))
             openInventory();
+        else if (drawnSlots[LivestockEntryIndex].Contains(x, y))
+            openLivestock();
         else if (drawnSlots[NotificationsEntryIndex].Contains(x, y))
             openNotifications();
         else if (drawnSlots[ChatEntryIndex].Contains(x, y))
@@ -168,6 +176,7 @@ internal sealed class Pelicom : IClickableMenu
             Point position = new((StripWidth - IconSize * IconScale) / 2, slot.Y + (SlotHeight - IconSize * IconScale) / 2);
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
             if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
+                || (i == LivestockEntryIndex && isLivestockMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
                 || (i == ChatEntryIndex && isChatMinimized()))
                 batch.Draw(Game1.staminaRect, new Rectangle(1, slot.Y + 8, 1, SlotHeight - 16), UiStyle.Muted * config.Opacity);
