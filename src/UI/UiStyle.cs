@@ -13,6 +13,7 @@ internal static class UiStyle
     internal static readonly Color Muted = new(150, 150, 150);
     internal const int MailIcon = 144;
     internal const int InventoryIcon = 152;
+    internal const int NotificationIcon = 151;
 
     internal static void DrawIcon(SpriteBatch batch, int index, Point position, int scale, float opacity)
     {

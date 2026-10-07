@@ -16,7 +16,7 @@ internal enum WindowResizeEdges
     Bottom = 8
 }
 
-// Window instances live until closed. Minimizing preserves content, position and size.
+// Window instances live until closed. The manager persists placement separately from content.
 internal abstract class OsWindow
 {
     private const int ResizeBorder = 4;
@@ -56,13 +56,33 @@ internal abstract class OsWindow
         int width = Math.Clamp(desiredSize.X, minimumSize.X, workArea.Width);
         int height = Math.Clamp(desiredSize.Y, minimumSize.Y, workArea.Height);
         Point origin = position ?? new Point(workArea.X + (workArea.Width - width) / 2, workArea.Y + (workArea.Height - height) / 2);
-        position = new Point(Math.Clamp(origin.X, workArea.Left, workArea.Right - width),
-            Math.Clamp(origin.Y, workArea.Top, workArea.Bottom - height));
-        Bounds = new Rectangle(position.Value.X, position.Value.Y, width, height);
+        // Fit the current viewport without overwriting the user's preferred placement.
+        Bounds = new Rectangle(Math.Clamp(origin.X, workArea.Left, workArea.Right - width),
+            Math.Clamp(origin.Y, workArea.Top, workArea.Bottom - height), width, height);
         return true;
     }
 
-    internal void MoveTo(Point origin) => position = origin;
+    internal void RestorePlacement(WindowPlacement placement)
+    {
+        position = new Point(placement.X, placement.Y);
+        size = new Point(placement.Width, placement.Height);
+    }
+
+    internal WindowPlacement? GetPlacement()
+    {
+        if (Bounds.IsEmpty)
+            return null;
+        Point origin = position ?? Bounds.Location;
+        Point dimensions = size ?? Bounds.Size;
+        return new WindowPlacement { X = origin.X, Y = origin.Y, Width = dimensions.X, Height = dimensions.Y };
+    }
+
+    internal void MoveTo(Point origin)
+    {
+        position = new Point(Math.Clamp(origin.X, workArea.Left, workArea.Right - Bounds.Width),
+            Math.Clamp(origin.Y, workArea.Top, workArea.Bottom - Bounds.Height));
+        Bounds = new Rectangle(position.Value, Bounds.Size);
+    }
 
     internal WindowResizeEdges GetResizeEdges(Point cursor)
     {
@@ -96,6 +116,7 @@ internal abstract class OsWindow
             bottom = Math.Clamp(bottom + delta.Y, top + minimumSize.Y, workArea.Bottom);
         position = new Point(left, top);
         size = new Point(right - left, bottom - top);
+        Bounds = new Rectangle(position.Value, size.Value);
     }
 
     internal virtual void ReceiveContentClick(Point cursor, bool leftClick) { }

@@ -1,5 +1,6 @@
 using AgrariaOS.Configuration;
 using AgrariaOS.Desktop.Windows;
+using AgrariaOS.Notifications;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
@@ -12,6 +13,8 @@ internal sealed class WindowManager
     private readonly ModConfig config;
     private readonly Func<bool> isVisible;
     private readonly Action<Exception> onDrawFailed;
+    private readonly Action saveConfig;
+    private Dictionary<string, WindowPlacement>? layouts;
     // Last entry is the front window, in both drawing and hit testing.
     private readonly List<OsWindow> windows = new();
     private readonly List<OsWindow> drawnWindows = new();
@@ -23,19 +26,34 @@ internal sealed class WindowManager
     private Point resizeStartCursor;
     private Rectangle resizeStartBounds;
 
-    internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed)
+    internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed, Action saveConfig)
     {
         this.config = config;
         this.isVisible = isVisible;
         this.onDrawFailed = onDrawFailed;
+        this.saveConfig = saveConfig;
     }
 
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow());
+    internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));
 
     internal void Open(string id, Func<OsWindow> create)
     {
-        OsWindow window = windows.FirstOrDefault(window => window.Id == id) ?? create();
+        OsWindow? window = windows.FirstOrDefault(window => window.Id == id);
+        if (window == null)
+        {
+            // Resolve ownership on first open, after the save's farmer is available.
+            if (layouts == null)
+            {
+                long farmerId = Game1.player.UniqueMultiplayerID;
+                if (!config.WindowLayouts.TryGetValue(farmerId, out layouts))
+                    config.WindowLayouts[farmerId] = layouts = new();
+            }
+            window = create();
+            if (layouts.TryGetValue(id, out WindowPlacement? placement))
+                window.RestorePlacement(placement);
+        }
         window.IsMinimized = false;
         windows.Remove(window);
         windows.Add(window);
@@ -56,11 +74,13 @@ internal sealed class WindowManager
             windows.Add(window);
             if (window.CloseBounds.Contains(cursor))
             {
+                RememberPlacement(window);
                 windows.Remove(window);
                 EndDrag();
             }
             else if (window.MinimizeBounds.Contains(cursor))
             {
+                RememberPlacement(window);
                 window.IsMinimized = true;
                 EndDrag();
             }
@@ -127,12 +147,27 @@ internal sealed class WindowManager
 
     internal void EndDrag()
     {
+        if (draggedWindow != null)
+            RememberPlacement(draggedWindow);
+        if (resizedWindow != null)
+            RememberPlacement(resizedWindow);
         draggedWindow = null;
         if (resizedWindow != null)
             resizedWindow.ActiveResizeEdges = WindowResizeEdges.None;
         resizedWindow = null;
         contentDragWindow?.EndContentDrag();
         contentDragWindow = null;
+    }
+
+    private void RememberPlacement(OsWindow window)
+    {
+        WindowPlacement? placement = window.GetPlacement();
+        if (layouts == null || placement == null
+            || (layouts.TryGetValue(window.Id, out WindowPlacement? previous) && previous == placement))
+            return;
+
+        layouts[window.Id] = placement;
+        saveConfig();
     }
 
     internal void InvalidateLayout()

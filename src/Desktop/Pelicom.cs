@@ -17,6 +17,7 @@ internal sealed class Pelicom : IClickableMenu
     private const int IconScale = 3;
     private const int MailEntryIndex = 5;
     private const int InventoryEntryIndex = 1;
+    private const int NotificationsEntryIndex = 6;
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Dashboard"),
@@ -25,7 +26,7 @@ internal sealed class Pelicom : IClickableMenu
         (121, "Mining Ledger"),
         (41, "Wallet"),
         (UiStyle.MailIcon, "Mail"),
-        (151, "Notifications"),
+        (UiStyle.NotificationIcon, "Notifications"),
         (131, "Exit")
     };
 
@@ -36,11 +37,15 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Func<bool> isMailMinimized;
     private readonly Action openInventory;
     private readonly Func<bool> isInventoryMinimized;
+    private readonly Action openNotifications;
+    private readonly Func<bool> isNotificationsMinimized;
+    private readonly Func<int> unreadNotifications;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
 
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
-        Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized)
+        Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized,
+        Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications)
     {
         this.config = config;
         this.isEnabled = isEnabled;
@@ -49,24 +54,32 @@ internal sealed class Pelicom : IClickableMenu
         this.isMailMinimized = isMailMinimized;
         this.openInventory = openInventory;
         this.isInventoryMinimized = isInventoryMinimized;
+        this.openNotifications = openNotifications;
+        this.isNotificationsMinimized = isNotificationsMinimized;
+        this.unreadNotifications = unreadNotifications;
     }
 
     internal bool IsVisible => isEnabled() && Game1.IsHudDrawn && !Game1.eventUp && Game1.farmEvent == null
-        && Game1.activeClickableMenu == null && Game1.currentMinigame == null;
+        && (Game1.activeClickableMenu == null || Game1.activeClickableMenu is GameMenu) && Game1.currentMinigame == null;
+
+    // Keep the rail behind the tabbed menu without intercepting its input.
+    internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Inventory and Mail open desktop windows; the remaining entries are placeholders.
+    // Inventory, Mail and Notifications open desktop windows; other entries are placeholders.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
-        if (!IsVisible || !drawnBounds.Contains(x, y))
+        if (!IsInteractive || !drawnBounds.Contains(x, y))
             return;
         if (drawnSlots[MailEntryIndex].Contains(x, y))
             openMail();
         else if (drawnSlots[InventoryEntryIndex].Contains(x, y))
             openInventory();
+        else if (drawnSlots[NotificationsEntryIndex].Contains(x, y))
+            openNotifications();
     }
     public override void receiveRightClick(int x, int y, bool playSound = true) { }
-    public override bool isWithinBounds(int x, int y) => IsVisible && drawnBounds.Contains(x, y);
+    public override bool isWithinBounds(int x, int y) => IsInteractive && drawnBounds.Contains(x, y);
 
     public override void gameWindowSizeChanged(Rectangle oldBounds, Rectangle newBounds)
     {
@@ -119,7 +132,7 @@ internal sealed class Pelicom : IClickableMenu
                 continue;
             drawnSlots[i] = slot;
 
-            if (slot.Contains(mouseX, mouseY))
+            if (IsInteractive && slot.Contains(mouseX, mouseY))
             {
                 hovered = i;
                 hoveredY = slot.Y;
@@ -128,13 +141,24 @@ internal sealed class Pelicom : IClickableMenu
 
             Point position = new((StripWidth - IconSize * IconScale) / 2, slot.Y + (SlotHeight - IconSize * IconScale) / 2);
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
-            if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized()))
+            if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
+                || (i == NotificationsEntryIndex && isNotificationsMinimized()))
                 batch.Draw(Game1.staminaRect, new Rectangle(1, slot.Y + 8, 1, SlotHeight - 16), UiStyle.Muted * config.Opacity);
+            if (i == NotificationsEntryIndex && unreadNotifications() > 0)
+            {
+                int count = Math.Min(99, unreadNotifications());
+                int width = Utility.getWidthOfTinyDigitString(count, 1f) + 4;
+                Rectangle badge = new(slot.Right - width - 1, slot.Y + 1, width, 11);
+                batch.Draw(Game1.staminaRect, badge, new Color(168, 55, 55) * config.Opacity);
+                Utility.drawTinyDigits(count, batch, new Vector2(badge.X + 2, badge.Y + 2), 1f, 0.92f, Color.White * config.Opacity);
+            }
         }
 
         if (hovered >= 0)
         {
             string label = Entries[hovered].Label;
+            if (hovered == NotificationsEntryIndex && unreadNotifications() > 0)
+                label += $" ({unreadNotifications()} unread)";
             Vector2 size = Game1.smallFont.MeasureString(label) * config.FontScale;
             int y = Math.Clamp(hoveredY + (SlotHeight - (int)MathF.Ceiling(size.Y)) / 2,
                 0, Math.Max(0, strip.Height - (int)MathF.Ceiling(size.Y) - 4));

@@ -29,14 +29,53 @@ internal static class UiText
         return suffix;
     }
 
-    internal static void Draw(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config)
+    internal static int LineHeight(float scale)
+        => (int)MathF.Ceiling(Math.Max(Game1.smallFont.LineSpacing,
+            Game1.smallFont.Glyphs.Max(glyph => glyph.Cropping.Height)) * scale) + 2;
+
+    internal static List<string> Wrap(string text, int width, float scale)
+    {
+        var lines = new List<string>();
+        if (width <= 0 || string.IsNullOrEmpty(text))
+            return lines;
+        string line = "";
+        foreach (string word in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string candidate = line.Length == 0 ? word : line + " " + word;
+            if (Game1.smallFont.MeasureString(candidate).X * scale <= width)
+            {
+                line = candidate;
+                continue;
+            }
+            if (line.Length > 0)
+                lines.Add(line);
+            line = "";
+            // Split long words too, without cutting a surrogate pair.
+            for (int i = 0; i < word.Length; i++)
+            {
+                string glyph = char.IsHighSurrogate(word[i]) && i + 1 < word.Length
+                    ? word.Substring(i++, 2) : word[i].ToString();
+                if (line.Length > 0 && Game1.smallFont.MeasureString(line + glyph).X * scale > width)
+                {
+                    lines.Add(line);
+                    line = "";
+                }
+                line += glyph;
+            }
+        }
+        if (line.Length > 0)
+            lines.Add(line);
+        return lines;
+    }
+
+    internal static void Draw(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config, float opacity = 1f)
     {
         position = new Vector2(MathF.Round(position.X), MathF.Round(position.Y));
         // Whole font scales and pixel-aligned positions avoid resampling the bitmap glyphs.
         // The game's HUD batch already uses PointClamp; don't restart or alter its shared batch.
-        batch.DrawString(Game1.smallFont, text, position + new Vector2(1, 1), Color.Black * (config.Opacity * 0.8f), 0,
+        batch.DrawString(Game1.smallFont, text, position + new Vector2(1, 1), Color.Black * (config.Opacity * opacity * 0.8f), 0,
             Vector2.Zero, config.FontScale, SpriteEffects.None, 0.9f);
-        batch.DrawString(Game1.smallFont, text, position, color * config.Opacity, 0,
+        batch.DrawString(Game1.smallFont, text, position, color * (config.Opacity * opacity), 0,
             Vector2.Zero, config.FontScale, SpriteEffects.None, 0.91f);
     }
 }

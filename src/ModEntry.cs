@@ -2,6 +2,7 @@ using AgrariaOS.Configuration;
 using AgrariaOS.Desktop;
 using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Hud;
+using AgrariaOS.Notifications;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -17,17 +18,23 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<bool> osHudActive = new(() => true);
     private readonly PerScreen<StatusReadoutRenderer> statusReadoutRenderer = new(() => new StatusReadoutRenderer());
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
+    private readonly PerScreen<NotificationHistory> notificationHistory = new(() => new NotificationHistory());
+    private readonly PerScreen<NotificationBubbleRenderer> notificationBubbleRenderer = new(() => new NotificationBubbleRenderer());
     private readonly PerScreen<Pelicom> pelicom = new(() => new Pelicom(Instance.config,
         () => Instance.UsePelicom, Instance.OnPelicomDrawFailed, () => Instance.windowManager.Value.OpenMail(),
         () => Instance.windowManager.Value.IsMinimized(MailWindow.WindowId),
         () => Instance.windowManager.Value.OpenInventory(),
-        () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId)));
+        () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId),
+        () => Instance.windowManager.Value.OpenNotifications(Instance.notificationHistory.Value),
+        () => Instance.windowManager.Value.IsMinimized(NotificationsWindow.WindowId),
+        () => Instance.notificationHistory.Value.UnreadCount));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
-        () => Instance.pelicom.Value.IsVisible, Instance.OnWindowDrawFailed));
+        () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed, () => Instance.Helper.WriteConfig(Instance.config)));
     private ModConfig config = null!;
     private bool patchInstalled;
     private bool toolbarPatchInstalled;
     private bool vitalsPatchInstalled;
+    private bool notificationPatchInstalled;
 
     public override void Entry(IModHelper helper)
     {
@@ -38,6 +45,12 @@ public sealed partial class ModEntry : Mod
 
         InstallHudPatches();
 
+        helper.Events.GameLoop.DayStarted += (_, _) =>
+        {
+            // SMAPI also raises DayStarted after loading a save; use the game's normal toast path.
+            if (config.Enabled && Context.IsWorldReady)
+                Game1.showGlobalMessage("Welcome to Agraria OS test-0184. Enjoy your stay.");
+        };
         helper.Events.Input.ButtonPressed += OnButtonPressed;
         helper.Events.Input.MouseWheelScrolled += (_, e) =>
         {
@@ -46,6 +59,12 @@ public sealed partial class ModEntry : Mod
                 helper.Input.SuppressScrollWheel();
         };
         helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch);
+        helper.Events.Display.RenderingActiveMenu += (_, e) =>
+        {
+            // The opaque menu background skips the HUD render pass entirely.
+            if (Game1.activeClickableMenu is GameMenu && Game1.options.showMenuBackground)
+                pelicom.Value.draw(e.SpriteBatch);
+        };
         helper.Events.Display.WindowResized += (_, _) => windowManager.Value.InvalidateLayout();
         helper.Events.GameLoop.UpdateTicked += (_, _) =>
         {
@@ -56,9 +75,13 @@ public sealed partial class ModEntry : Mod
         };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
+            foreach (var screen in windowManager.GetActiveValues())
+                screen.Value.EndDrag();
             osHudActive.ResetAllScreens();
             statusReadoutRenderer.ResetAllScreens();
             toolbarRenderer.ResetAllScreens();
+            notificationHistory.ResetAllScreens();
+            notificationBubbleRenderer.ResetAllScreens();
             pelicom.ResetAllScreens();
             windowManager.ResetAllScreens();
         };
@@ -115,6 +138,7 @@ public sealed partial class ModEntry : Mod
         Monitor.Log($"Window drawing failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
     }
 
-    private bool UseTextVitals => vitalsPatchInstalled && UseCompactToolbar && Game1.activeClickableMenu == null
+    // Suppress vanilla bars even while a menu temporarily hides the compact toolbar.
+    private bool UseTextVitals => vitalsPatchInstalled && UseCompactToolbar
         && Game1.onScreenMenus.OfType<Toolbar>().Any();
 }

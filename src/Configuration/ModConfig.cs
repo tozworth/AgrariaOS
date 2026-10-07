@@ -15,6 +15,8 @@ public sealed class ModConfig
     public bool ShowLocation { get; set; } = true;
     public bool ShowSecurity { get; set; } = true;
     public bool ShowWeather { get; set; } = true;
+    // Farmer IDs survive reloads and split-screen reconnects; screen IDs don't.
+    public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
 
     internal void Normalize()
     {
@@ -22,6 +24,21 @@ public sealed class ModConfig
         Y = Math.Max(0, Y);
         TextScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 0.5f, 2f) : 1f;
         Opacity = float.IsFinite(Opacity) ? Math.Clamp(Opacity, 0.1f, 1f) : 0.95f;
+        WindowLayouts ??= new();
+        foreach (long farmerId in WindowLayouts.Keys.ToArray())
+        {
+            Dictionary<string, WindowPlacement>? layouts = WindowLayouts[farmerId];
+            if (layouts == null)
+            {
+                WindowLayouts.Remove(farmerId);
+                continue;
+            }
+            foreach (string id in layouts.Keys.ToArray())
+            {
+                if (layouts[id] is not { Width: > 0, Height: > 0 })
+                    layouts.Remove(id);
+            }
+        }
     }
 
     // Existing 0.85 configs also get the sharper rendering without a migration/reset.

@@ -32,6 +32,7 @@ public sealed partial class ModEntry
 
         if (patchInstalled)
         {
+            InstallNotificationPatches();
             try
             {
                 var harmony = new Harmony(ModManifest.UniqueID);
