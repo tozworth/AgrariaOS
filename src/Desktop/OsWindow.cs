@@ -2,6 +2,7 @@ using AgrariaOS.Configuration;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using StardewValley;
 
 namespace AgrariaOS.Desktop;
@@ -123,6 +124,8 @@ internal abstract class OsWindow
     internal virtual void DragContent(Point cursor) { }
     internal virtual void EndContentDrag() { }
     internal virtual void ReceiveScroll(int delta) { }
+    internal virtual IKeyboardSubscriber? KeyboardSubscriber => null;
+    internal virtual void ReceiveKey(Keys key) { }
 
     internal void Draw(SpriteBatch batch, ModConfig config, Point cursor)
     {

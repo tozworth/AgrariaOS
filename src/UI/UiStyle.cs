@@ -14,6 +14,25 @@ internal static class UiStyle
     internal const int MailIcon = 144;
     internal const int InventoryIcon = 152;
     internal const int NotificationIcon = 151;
+    internal const int ChatIcon = 135;
+    private static readonly Color[] SpeakerColors =
+    {
+        new(104, 214, 255),
+        new(137, 221, 151),
+        new(238, 210, 126),
+        new(255, 178, 127),
+        new(196, 169, 255),
+        new(244, 161, 209)
+    };
+
+    internal static Color SpeakerColor(string speaker)
+    {
+        // String.GetHashCode varies between launches; keep each name's color stable.
+        uint hash = 2166136261;
+        foreach (char character in speaker)
+            hash = unchecked((hash ^ character) * 16777619);
+        return SpeakerColors[hash % (uint)SpeakerColors.Length];
+    }
 
     internal static void DrawIcon(SpriteBatch batch, int index, Point position, int scale, float opacity)
     {

@@ -17,7 +17,8 @@ internal sealed class Pelicom : IClickableMenu
     private const int IconScale = 3;
     private const int MailEntryIndex = 5;
     private const int InventoryEntryIndex = 1;
-    private const int NotificationsEntryIndex = 6;
+    private const int ChatEntryIndex = 6;
+    private const int NotificationsEntryIndex = 7;
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Dashboard"),
@@ -26,6 +27,7 @@ internal sealed class Pelicom : IClickableMenu
         (121, "Mining Ledger"),
         (41, "Wallet"),
         (UiStyle.MailIcon, "Mail"),
+        (UiStyle.ChatIcon, "Chat"),
         (UiStyle.NotificationIcon, "Notifications"),
         (131, "Exit")
     };
@@ -40,12 +42,15 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Action openNotifications;
     private readonly Func<bool> isNotificationsMinimized;
     private readonly Func<int> unreadNotifications;
+    private readonly Action openChat;
+    private readonly Func<bool> isChatMinimized;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
 
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
         Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized,
-        Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications)
+        Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
+        Action openChat, Func<bool> isChatMinimized)
     {
         this.config = config;
         this.isEnabled = isEnabled;
@@ -57,6 +62,8 @@ internal sealed class Pelicom : IClickableMenu
         this.openNotifications = openNotifications;
         this.isNotificationsMinimized = isNotificationsMinimized;
         this.unreadNotifications = unreadNotifications;
+        this.openChat = openChat;
+        this.isChatMinimized = isChatMinimized;
     }
 
     internal bool IsVisible => isEnabled() && Game1.IsHudDrawn && !Game1.eventUp && Game1.farmEvent == null
@@ -66,7 +73,7 @@ internal sealed class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Inventory, Mail and Notifications open desktop windows; other entries are placeholders.
+    // Inventory, Mail, Chat and Notifications open desktop windows; other entries are placeholders.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         if (!IsInteractive || !drawnBounds.Contains(x, y))
@@ -77,6 +84,8 @@ internal sealed class Pelicom : IClickableMenu
             openInventory();
         else if (drawnSlots[NotificationsEntryIndex].Contains(x, y))
             openNotifications();
+        else if (drawnSlots[ChatEntryIndex].Contains(x, y))
+            openChat();
     }
     public override void receiveRightClick(int x, int y, bool playSound = true) { }
     public override bool isWithinBounds(int x, int y) => IsInteractive && drawnBounds.Contains(x, y);
@@ -142,7 +151,8 @@ internal sealed class Pelicom : IClickableMenu
             Point position = new((StripWidth - IconSize * IconScale) / 2, slot.Y + (SlotHeight - IconSize * IconScale) / 2);
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
             if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
-                || (i == NotificationsEntryIndex && isNotificationsMinimized()))
+                || (i == NotificationsEntryIndex && isNotificationsMinimized())
+                || (i == ChatEntryIndex && isChatMinimized()))
                 batch.Draw(Game1.staminaRect, new Rectangle(1, slot.Y + 8, 1, SlotHeight - 16), UiStyle.Muted * config.Opacity);
             if (i == NotificationsEntryIndex && unreadNotifications() > 0)
             {

@@ -78,4 +78,17 @@ internal static class UiText
         batch.DrawString(Game1.smallFont, text, position, color * (config.Opacity * opacity), 0,
             Vector2.Zero, config.FontScale, SpriteEffects.None, 0.91f);
     }
+
+    internal static void DrawBold(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config)
+    {
+        position = new Vector2(MathF.Round(position.X), MathF.Round(position.Y));
+        // Thicken the bitmap by one UI pixel, keeping glyphs and both shadow passes aligned.
+        Color shadow = Color.Black * (config.Opacity * 0.8f);
+        for (int offset = 0; offset <= 1; offset++)
+            batch.DrawString(Game1.smallFont, text, position + new Vector2(offset + 1, 1), shadow, 0,
+                Vector2.Zero, config.FontScale, SpriteEffects.None, 0.9f);
+        for (int offset = 0; offset <= 1; offset++)
+            batch.DrawString(Game1.smallFont, text, position + new Vector2(offset, 0), color * config.Opacity, 0,
+                Vector2.Zero, config.FontScale, SpriteEffects.None, 0.91f);
+    }
 }

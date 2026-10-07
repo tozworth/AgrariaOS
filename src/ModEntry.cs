@@ -1,4 +1,5 @@
 using AgrariaOS.Configuration;
+using AgrariaOS.Chat;
 using AgrariaOS.Desktop;
 using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Hud;
@@ -19,6 +20,8 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<StatusReadoutRenderer> statusReadoutRenderer = new(() => new StatusReadoutRenderer());
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
     private readonly PerScreen<NotificationHistory> notificationHistory = new(() => new NotificationHistory());
+    private readonly PerScreen<ChatSession> chatHistory = new(() => new ChatSession());
+    private readonly PerScreen<bool> dialogueRoutingFailed = new(() => false);
     private readonly PerScreen<NotificationBubbleRenderer> notificationBubbleRenderer = new(() => new NotificationBubbleRenderer());
     private readonly PerScreen<Pelicom> pelicom = new(() => new Pelicom(Instance.config,
         () => Instance.UsePelicom, Instance.OnPelicomDrawFailed, () => Instance.windowManager.Value.OpenMail(),
@@ -27,7 +30,9 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId),
         () => Instance.windowManager.Value.OpenNotifications(Instance.notificationHistory.Value),
         () => Instance.windowManager.Value.IsMinimized(NotificationsWindow.WindowId),
-        () => Instance.notificationHistory.Value.UnreadCount));
+        () => Instance.notificationHistory.Value.UnreadCount,
+        () => Instance.windowManager.Value.OpenChat(Instance.chatHistory.Value),
+        () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed, () => Instance.Helper.WriteConfig(Instance.config)));
     private ModConfig config = null!;
@@ -52,6 +57,7 @@ public sealed partial class ModEntry : Mod
                 Game1.showGlobalMessage("Welcome to Agraria OS test-0184. Enjoy your stay.");
         };
         helper.Events.Input.ButtonPressed += OnButtonPressed;
+        helper.Events.GameLoop.UpdateTicking += (_, _) => windowManager.Value.SuppressKeyboardInput(helper.Input);
         helper.Events.Input.MouseWheelScrolled += (_, e) =>
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
@@ -71,16 +77,22 @@ public sealed partial class ModEntry : Mod
             // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
             if (patchInstalled && config.Enabled && Context.IsWorldReady && !Game1.onScreenMenus.Contains(pelicom.Value))
                 Game1.onScreenMenus.Add(pelicom.Value);
+            RouteDialogue();
             windowManager.Value.Update(helper.Input);
         };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
             foreach (var screen in windowManager.GetActiveValues())
+            {
+                screen.Value.ClearKeyboardFocus();
                 screen.Value.EndDrag();
+            }
             osHudActive.ResetAllScreens();
             statusReadoutRenderer.ResetAllScreens();
             toolbarRenderer.ResetAllScreens();
             notificationHistory.ResetAllScreens();
+            chatHistory.ResetAllScreens();
+            dialogueRoutingFailed.ResetAllScreens();
             notificationBubbleRenderer.ResetAllScreens();
             pelicom.ResetAllScreens();
             windowManager.ResetAllScreens();
@@ -105,6 +117,13 @@ public sealed partial class ModEntry : Mod
                 Helper.Input.Suppress(e.Button);
                 return;
             }
+        }
+
+        if (UsePelicom && e.Button != config.ToggleKey && !e.IsSuppressed()
+            && windowManager.Value.ReceiveKeyboardButton(e.Button, Helper.Input))
+        {
+            Helper.Input.Suppress(e.Button);
+            return;
         }
 
         if (!patchInstalled || !config.Enabled || !Context.IsWorldReady || !Context.IsPlayerFree || e.Button != config.ToggleKey)

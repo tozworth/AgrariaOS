@@ -1,8 +1,10 @@
 using AgrariaOS.Configuration;
+using AgrariaOS.Chat;
 using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Notifications;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 
@@ -25,6 +27,10 @@ internal sealed class WindowManager
     private Point dragOffset;
     private Point resizeStartCursor;
     private Rectangle resizeStartBounds;
+    private OsWindow? keyboardWindow;
+    private KeyboardDispatcher? keyboardDispatcher;
+    private static readonly SButton[] KeyboardButtons = Enum.GetValues<SButton>()
+        .Where(button => button.TryGetKeyboard(out _)).ToArray();
 
     internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed, Action saveConfig)
     {
@@ -37,9 +43,16 @@ internal sealed class WindowManager
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow());
     internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));
+    internal void OpenChat(ChatSession session, bool showLocal = false)
+    {
+        Open(ChatWindow.WindowId, () => new ChatWindow(session));
+        if (showLocal)
+            ((ChatWindow)windows.Last()).SelectTab("Local");
+    }
 
     internal void Open(string id, Func<OsWindow> create)
     {
+        ClearKeyboardFocus();
         OsWindow? window = windows.FirstOrDefault(window => window.Id == id);
         if (window == null)
         {
@@ -64,6 +77,7 @@ internal sealed class WindowManager
     internal bool ReceiveClick(Point cursor, bool leftClick)
     {
         OsWindow? window = GetWindowAt(cursor);
+        ClearKeyboardFocus();
         if (window == null)
             return false;
 
@@ -99,6 +113,11 @@ internal sealed class WindowManager
             else
             {
                 window.ReceiveContentClick(cursor, leftClick: true);
+                if (window.KeyboardSubscriber?.Selected == true)
+                {
+                    keyboardWindow = window;
+                    keyboardDispatcher = Game1.keyboardDispatcher;
+                }
                 contentDragWindow = window;
             }
         }
@@ -128,6 +147,7 @@ internal sealed class WindowManager
 
     internal void Update(IInputHelper input)
     {
+        RefreshKeyboardFocus();
         // Suppression reports the button released to the game on subsequent ticks.
         // SMAPI retains the suppression flag until the physical button is released.
         bool leftButtonHeld = input.IsDown(SButton.MouseLeft) || input.IsSuppressed(SButton.MouseLeft);
@@ -172,6 +192,7 @@ internal sealed class WindowManager
 
     internal void InvalidateLayout()
     {
+        ClearKeyboardFocus();
         drawnWindows.Clear();
         EndDrag();
     }
@@ -181,6 +202,7 @@ internal sealed class WindowManager
         drawnWindows.Clear();
         if (!isVisible())
         {
+            ClearKeyboardFocus();
             EndDrag();
             return;
         }
@@ -208,6 +230,68 @@ internal sealed class WindowManager
         {
             InvalidateLayout();
             onDrawFailed(ex);
+        }
+    }
+
+    internal void ClearKeyboardFocus()
+    {
+        IKeyboardSubscriber? subscriber = keyboardWindow?.KeyboardSubscriber;
+        if (subscriber != null)
+        {
+            if (keyboardDispatcher?.Subscriber == subscriber)
+                keyboardDispatcher.Subscriber = null;
+            subscriber.Selected = false;
+        }
+        keyboardWindow = null;
+        keyboardDispatcher = null;
+    }
+
+    private bool RefreshKeyboardFocus()
+    {
+        if (keyboardWindow == null)
+            return false;
+        IKeyboardSubscriber? subscriber = keyboardWindow.KeyboardSubscriber;
+        if (!isVisible() || Game1.IsChatting || keyboardWindow.IsMinimized || keyboardWindow.Bounds.IsEmpty
+            || keyboardDispatcher != Game1.keyboardDispatcher
+            || windows.LastOrDefault(window => !window.IsMinimized) != keyboardWindow
+            || (Game1.keyboardDispatcher.Subscriber != null && Game1.keyboardDispatcher.Subscriber != subscriber))
+        {
+            ClearKeyboardFocus();
+            return false;
+        }
+        // UpdateOther clears subscribers outside vanilla menus. Restore our owner after that
+        // tick and before native text events arrive; never take focus from another text field.
+        Game1.keyboardDispatcher.Subscriber = subscriber;
+        return true;
+    }
+
+    internal bool ReceiveKeyboardButton(SButton button, IInputHelper input)
+    {
+        if (!RefreshKeyboardFocus() || !Game1.game1.HasKeyboardFocus() || !button.TryGetKeyboard(out Keys key))
+            return false;
+        if (key is Keys.Escape or Keys.Tab)
+            ClearKeyboardFocus();
+        else if (key == Keys.V && (input.IsDown(SButton.LeftControl) || input.IsSuppressed(SButton.LeftControl)
+            || input.IsDown(SButton.RightControl) || input.IsSuppressed(SButton.RightControl)))
+        {
+            // Poll reads SMAPI's suppressed keys, so paste must happen before suppression.
+            string pasted = "";
+            if (DesktopClipboard.GetText(ref pasted) && !string.IsNullOrEmpty(pasted))
+                keyboardWindow!.KeyboardSubscriber!.RecieveTextInput(pasted);
+        }
+        else
+            keyboardWindow!.ReceiveKey(key);
+        return true;
+    }
+
+    internal void SuppressKeyboardInput(IInputHelper input)
+    {
+        if (!RefreshKeyboardFocus() || !Game1.game1.HasKeyboardFocus())
+            return;
+        foreach (SButton button in KeyboardButtons)
+        {
+            if (input.IsDown(button))
+                input.Suppress(button);
         }
     }
 }
