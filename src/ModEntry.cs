@@ -6,6 +6,7 @@ using AgrariaOS.Hud;
 using AgrariaOS.Notifications;
 using AgrariaOS.UI;
 using AgrariaOS.Integration;
+using AgrariaOS.Mining;
 using AgrariaOS.Movement;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
@@ -25,6 +26,7 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<StatusReadoutRenderer> statusReadoutRenderer = new(() => new StatusReadoutRenderer());
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
     private readonly PerScreen<NotificationHistory> notificationHistory = new(() => new NotificationHistory());
+    private readonly MiningLedger miningLedger = new();
     private readonly PerScreen<ChatSession> chatHistory = new(() => new ChatSession());
     private readonly PerScreen<bool> dialogueRoutingFailed = new(() => false);
     private readonly PerScreen<NotificationBubbleRenderer> notificationBubbleRenderer = new(() => new NotificationBubbleRenderer());
@@ -41,7 +43,9 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.OpenChat(Instance.chatHistory.Value),
         () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId),
         (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items),
-        () => Instance.windowManager.Value.GetMinimizedWindowItems()));
+        () => Instance.windowManager.Value.GetMinimizedWindowItems(),
+        () => Instance.windowManager.Value.OpenMiningLedger(Instance.miningLedger),
+        () => Instance.windowManager.Value.IsMinimized(MiningLedgerWindow.WindowId)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
         () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything));
@@ -67,6 +71,7 @@ public sealed partial class ModEntry : Mod
         InstallHudPatches();
         InstallDesktopPausePatches();
         InstallWorldInteractionPatches();
+        InstallMiningPatches();
 
         helper.Events.GameLoop.DayStarted += (_, _) =>
         {
@@ -136,12 +141,14 @@ public sealed partial class ModEntry : Mod
             statusReadoutRenderer.ResetAllScreens();
             toolbarRenderer.ResetAllScreens();
             notificationHistory.ResetAllScreens();
+            miningLedger.ClearAll();
             chatHistory.ResetAllScreens();
             dialogueRoutingFailed.ResetAllScreens();
             notificationBubbleRenderer.ResetAllScreens();
             pelicom.ResetAllScreens();
             windowManager.ResetAllScreens();
             rightClickAction.ResetAllScreens();
+            interactArrival.ResetAllScreens();
             telephoneTarget.ResetAllScreens();
             worldInteractionsFailed.ResetAllScreens();
         };
@@ -207,6 +214,21 @@ public sealed partial class ModEntry : Mod
                     OnClickToMoveFailed(ex);
                 }
                 return;
+            }
+        }
+
+        if (e.Button == SButton.MouseRight && !e.IsSuppressed() && CanClickToMove
+            && !Helper.Input.IsDown(SButton.LeftShift) && !Helper.Input.IsDown(SButton.RightShift))
+        {
+            Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+            // Same HUD reservation as left-click; in-range clicks fall through to vanilla.
+            if (!Game1.onScreenMenus.Any(menu => (Game1.IsHudDrawn || menu == Game1.chatBox)
+                    && menu.isWithinBounds(cursor.X, cursor.Y)))
+            {
+                Vector2 pixel = e.Cursor.AbsolutePixels;
+                if (TryStartRightClickInteract(new Point((int)MathF.Floor(pixel.X / 64), (int)MathF.Floor(pixel.Y / 64))))
+                    Helper.Input.Suppress(e.Button);
+                // Unactionable far tiles keep vanilla's facing-tile action plus Lookup info.
             }
         }
 

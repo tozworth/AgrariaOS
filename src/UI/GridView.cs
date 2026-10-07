@@ -15,6 +15,8 @@ internal sealed class GridView<TRow> where TRow : class
     private readonly int[] preferredWidths;
     private readonly int[] columnWidths;
     private readonly Rectangle[] headers;
+    private readonly List<int> visibleColumns;
+    private Action<string[]>? columnVisibilityChanged;
     private readonly List<TRow> rows = new();
     private Rectangle scrollTrack;
     private Rectangle scrollThumb;
@@ -23,6 +25,7 @@ internal sealed class GridView<TRow> where TRow : class
     private int layoutFirstRow;
     private int layoutEndRow;
     private int resizingColumn = -1;
+    private int resizingRightColumn = -1;
     private int resizeStartX;
     private int resizeLeftWidth;
     private int resizeRightWidth;
@@ -42,10 +45,32 @@ internal sealed class GridView<TRow> where TRow : class
     {
         if (columns.Length == 0)
             throw new ArgumentException("A grid needs at least one column.", nameof(columns));
+        if (columns.Select(column => column.Id).Distinct(StringComparer.Ordinal).Count() != columns.Length)
+            throw new ArgumentException("Column IDs must be unique within a grid.", nameof(columns));
         this.columns = columns.ToArray();
         preferredWidths = columns.Select(column => column.PreferredWidth).ToArray();
         columnWidths = new int[columns.Length];
         headers = new Rectangle[columns.Length];
+        visibleColumns = Enumerable.Range(0, columns.Length).ToList();
+    }
+
+    // Missing/new columns are visible by default. Ignore obsolete saved IDs, and
+    // recover a usable header if a hand-edited config hides every known column.
+    internal void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
+    {
+        var hidden = hiddenColumns.ToHashSet(StringComparer.Ordinal);
+        visibleColumns.Clear();
+        for (int i = 0; i < columns.Length; i++)
+        {
+            if (!hidden.Contains(columns[i].Id))
+                visibleColumns.Add(i);
+        }
+        if (visibleColumns.Count == 0)
+            visibleColumns.Add(0);
+        ResetHiddenSort();
+        EndDrag();
+        ClearLayout();
+        columnVisibilityChanged = onChanged;
     }
 
     // Call with the live source before drawing so stack/value changes are sorted too.
@@ -99,7 +124,7 @@ internal sealed class GridView<TRow> where TRow : class
 
         FitColumns(tableWidth);
         int x = bounds.X + Padding;
-        for (int i = 0; i < headers.Length; i++)
+        foreach (int i in visibleColumns)
         {
             headers[i] = new Rectangle(x, bounds.Y + Padding, columnWidths[i], rowHeight);
             x += columnWidths[i];
@@ -108,7 +133,7 @@ internal sealed class GridView<TRow> where TRow : class
         FirstRow = Math.Clamp(FirstRow, 0, MaxFirstRow);
         layoutFirstRow = FirstRow;
         layoutEndRow = Math.Min(rows.Count, FirstRow + VisibleRows);
-        RowsBounds = new Rectangle(headers[0].X, headers[0].Bottom + 1, tableWidth, availableHeight);
+        RowsBounds = new Rectangle(bounds.X + Padding, bounds.Y + Padding + rowHeight + 1, tableWidth, availableHeight);
         scrollTrack = new Rectangle(RowsBounds.Right + 2, RowsBounds.Y, ScrollbarWidth - 4, RowsBounds.Height);
         if (MaxFirstRow > 0)
         {
@@ -129,16 +154,16 @@ internal sealed class GridView<TRow> where TRow : class
             UiText.DrawCell(batch, "Not enough space.", bounds, UiStyle.Muted, config);
             return;
         }
-        foreach (Rectangle header in headers)
-            batch.Draw(Game1.staminaRect, header, UiStyle.Border * (config.Opacity * 0.45f));
-        for (int i = 0; i < headers.Length; i++)
+        for (int index = 0; index < visibleColumns.Count; index++)
         {
+            int i = visibleColumns[index];
+            batch.Draw(Game1.staminaRect, headers[i], UiStyle.Border * (config.Opacity * 0.45f));
             DrawHeader(batch, i, config);
-            if (i < headers.Length - 1)
+            if (index < visibleColumns.Count - 1)
             {
                 Rectangle divider = new(headers[i].Right - 1, headers[i].Y, 1, rowHeight + 1 + RowsBounds.Height);
                 batch.Draw(Game1.staminaRect, divider, UiStyle.Border * config.Opacity);
-                if (resizingColumn == i || DividerBounds(i).Contains(cursor))
+                if (resizingColumn == i || DividerBounds(i, visibleColumns[index + 1]).Contains(cursor))
                     batch.Draw(Game1.staminaRect, new Rectangle(divider.X, divider.Y, 2, rowHeight), UiStyle.Primary * config.Opacity);
             }
         }
@@ -153,7 +178,7 @@ internal sealed class GridView<TRow> where TRow : class
                 batch.Draw(Game1.staminaRect, row, UiStyle.Border * (config.Opacity * 0.55f));
             else if ((i & 1) != 0)
                 batch.Draw(Game1.staminaRect, row, Color.White * (config.Opacity * 0.025f));
-            for (int column = 0; column < columns.Length; column++)
+            foreach (int column in visibleColumns)
                 columns[column].DrawCell(batch, rows[i], new Rectangle(headers[column].X, row.Y, headers[column].Width, row.Height), config);
         }
 
@@ -193,18 +218,22 @@ internal sealed class GridView<TRow> where TRow : class
     {
         if (!leftClick)
             return false;
-        for (int i = 0; i < headers.Length - 1; i++)
+        for (int index = 0; index < visibleColumns.Count - 1; index++)
         {
-            if (!DividerBounds(i).Contains(cursor))
+            int i = visibleColumns[index];
+            int right = visibleColumns[index + 1];
+            if (!DividerBounds(i, right).Contains(cursor))
                 continue;
-            Array.Copy(columnWidths, preferredWidths, columnWidths.Length);
+            foreach (int column in visibleColumns)
+                preferredWidths[column] = columnWidths[column];
             resizingColumn = i;
+            resizingRightColumn = right;
             resizeStartX = cursor.X;
             resizeLeftWidth = columnWidths[i];
-            resizeRightWidth = columnWidths[i + 1];
+            resizeRightWidth = columnWidths[right];
             return true;
         }
-        for (int i = 0; i < headers.Length; i++)
+        foreach (int i in visibleColumns)
         {
             if (!headers[i].Contains(cursor))
                 continue;
@@ -222,15 +251,56 @@ internal sealed class GridView<TRow> where TRow : class
         return false;
     }
 
+    // All columns remain available here, including ones whose hit boxes are hidden.
+    internal ContextMenuItem[]? GetHeaderContextMenuItems(Point cursor)
+    {
+        if (!visibleColumns.Any(column => headers[column].Contains(cursor)))
+            return null;
+        return columns.Select((column, index) => new ContextMenuItem(column.Heading,
+            () => ToggleColumn(index), IsChecked: visibleColumns.Contains(index),
+            IsEnabled: visibleColumns.Count > 1 || !visibleColumns.Contains(index))).ToArray();
+    }
+
+    private void ToggleColumn(int column)
+    {
+        if (visibleColumns.Contains(column))
+        {
+            // Keep a header available to reopen the menu and restore hidden columns.
+            if (visibleColumns.Count == 1)
+                return;
+            visibleColumns.Remove(column);
+        }
+        else
+        {
+            int next = visibleColumns.FindIndex(index => index > column);
+            visibleColumns.Insert(next < 0 ? visibleColumns.Count : next, column);
+        }
+        ResetHiddenSort();
+        EndDrag();
+        ClearLayout();
+        columnVisibilityChanged?.Invoke(columns.Where((_, index) => !visibleColumns.Contains(index))
+            .Select(column => column.Id).ToArray());
+    }
+
+    private void ResetHiddenSort()
+    {
+        if (SortColumn >= 0 && !visibleColumns.Contains(SortColumn))
+        {
+            SortColumn = -1;
+            SortDescending = false;
+            FirstRow = 0;
+        }
+    }
+
     internal void Drag(Point cursor)
     {
         if (resizingColumn >= 0)
         {
             int delta = Math.Clamp(cursor.X - resizeStartX,
                 GetMinimumWidth(resizingColumn, RowsBounds.Width) - resizeLeftWidth,
-                resizeRightWidth - GetMinimumWidth(resizingColumn + 1, RowsBounds.Width));
+                resizeRightWidth - GetMinimumWidth(resizingRightColumn, RowsBounds.Width));
             preferredWidths[resizingColumn] = resizeLeftWidth + delta;
-            preferredWidths[resizingColumn + 1] = resizeRightWidth - delta;
+            preferredWidths[resizingRightColumn] = resizeRightWidth - delta;
         }
         else if (scrollDragOffset.HasValue && scrollTrack.Height > scrollThumb.Height)
         {
@@ -242,6 +312,7 @@ internal sealed class GridView<TRow> where TRow : class
     internal void EndDrag()
     {
         resizingColumn = -1;
+        resizingRightColumn = -1;
         scrollDragOffset = null;
     }
 
@@ -258,32 +329,33 @@ internal sealed class GridView<TRow> where TRow : class
         VisibleRows = layoutFirstRow = layoutEndRow = 0;
     }
 
-    private Rectangle DividerBounds(int column)
-        => headers[column].Width == 0 || headers[column + 1].Width == 0 ? Rectangle.Empty
+    private Rectangle DividerBounds(int column, int rightColumn)
+        => headers[column].Width == 0 || headers[rightColumn].Width == 0 ? Rectangle.Empty
             : new Rectangle(headers[column].Right - 3, headers[column].Y, 7, headers[column].Height);
 
     private int GetMinimumWidth(int column, int tableWidth)
-        => Math.Min(columns[column].MinimumWidth, tableWidth / columns.Length);
+        => Math.Min(columns[column].MinimumWidth, tableWidth / visibleColumns.Count);
 
     private void FitColumns(int width)
     {
         int minimumTotal = 0;
         int weightTotal = 0;
-        for (int i = 0; i < columnWidths.Length; i++)
+        Array.Clear(columnWidths);
+        foreach (int i in visibleColumns)
         {
             columnWidths[i] = GetMinimumWidth(i, width);
             minimumTotal += columnWidths[i];
             weightTotal += Math.Max(0, preferredWidths[i] - columnWidths[i]);
         }
         int used = 0;
-        for (int i = 0; i < columnWidths.Length; i++)
+        foreach (int i in visibleColumns)
         {
             int weight = Math.Max(0, preferredWidths[i] - columnWidths[i]);
-            columnWidths[i] += weightTotal == 0 ? (width - minimumTotal) / columnWidths.Length
+            columnWidths[i] += weightTotal == 0 ? (width - minimumTotal) / visibleColumns.Count
                 : (int)((long)(width - minimumTotal) * weight / weightTotal);
             used += columnWidths[i];
         }
-        columnWidths[0] += width - used;
+        columnWidths[visibleColumns[0]] += width - used;
     }
 
     private void DrawHeader(SpriteBatch batch, int column, ModConfig config)

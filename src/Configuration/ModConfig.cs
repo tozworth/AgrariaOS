@@ -19,6 +19,7 @@ public sealed class ModConfig
     public bool ShowChatTimestamps { get; set; } = true;
     // Farmer IDs survive reloads and split-screen reconnects; screen IDs don't.
     public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
+    public Dictionary<long, Dictionary<string, string[]>> WindowHiddenColumns { get; set; } = new();
 
     internal void Normalize()
     {
@@ -40,6 +41,19 @@ public sealed class ModConfig
                 if (layouts[id] is not { Width: > 0, Height: > 0 })
                     layouts.Remove(id);
             }
+        }
+        WindowHiddenColumns ??= new();
+        foreach (long farmerId in WindowHiddenColumns.Keys.ToArray())
+        {
+            Dictionary<string, string[]>? columns = WindowHiddenColumns[farmerId];
+            if (columns == null)
+            {
+                WindowHiddenColumns.Remove(farmerId);
+                continue;
+            }
+            foreach (string id in columns.Keys.ToArray())
+                columns[id] = (columns[id] ?? Array.Empty<string>())
+                    .Where(column => !string.IsNullOrWhiteSpace(column)).Distinct(StringComparer.Ordinal).ToArray();
         }
     }
 

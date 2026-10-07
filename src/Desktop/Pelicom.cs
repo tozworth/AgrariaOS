@@ -18,6 +18,7 @@ internal sealed class Pelicom : IClickableMenu
     private const int MailEntryIndex = 5;
     private const int InventoryEntryIndex = 1;
     private const int LivestockEntryIndex = 2;
+    private const int MiningEntryIndex = 3;
     private const int ChatEntryIndex = 6;
     private const int NotificationsEntryIndex = 7;
     private const int ExitEntryIndex = 8;
@@ -50,6 +51,8 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Func<bool> isChatMinimized;
     private readonly Action<Point, ContextMenuItem[]> showContextMenu;
     private readonly Func<ContextMenuItem[]> minimizedWindows;
+    private readonly Action openMiningLedger;
+    private readonly Func<bool> isMiningLedgerMinimized;
     private bool autoHideChecked;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
@@ -59,7 +62,7 @@ internal sealed class Pelicom : IClickableMenu
         Action openLivestock, Func<bool> isLivestockMinimized,
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
         Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
-        Func<ContextMenuItem[]> minimizedWindows)
+        Func<ContextMenuItem[]> minimizedWindows, Action openMiningLedger, Func<bool> isMiningLedgerMinimized)
     {
         this.config = config;
         this.isEnabled = isEnabled;
@@ -77,6 +80,8 @@ internal sealed class Pelicom : IClickableMenu
         this.isChatMinimized = isChatMinimized;
         this.showContextMenu = showContextMenu;
         this.minimizedWindows = minimizedWindows;
+        this.openMiningLedger = openMiningLedger;
+        this.isMiningLedgerMinimized = isMiningLedgerMinimized;
     }
 
     internal bool IsVisible => isEnabled() && Game1.IsHudDrawn && !Game1.eventUp && Game1.farmEvent == null
@@ -97,6 +102,8 @@ internal sealed class Pelicom : IClickableMenu
             openInventory();
         else if (drawnSlots[LivestockEntryIndex].Contains(x, y))
             openLivestock();
+        else if (drawnSlots[MiningEntryIndex].Contains(x, y))
+            openMiningLedger();
         else if (drawnSlots[NotificationsEntryIndex].Contains(x, y))
             openNotifications();
         else if (drawnSlots[ChatEntryIndex].Contains(x, y))
@@ -176,7 +183,7 @@ internal sealed class Pelicom : IClickableMenu
             Point position = new((StripWidth - IconSize * IconScale) / 2, slot.Y + (SlotHeight - IconSize * IconScale) / 2);
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
             if ((i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
-                || (i == LivestockEntryIndex && isLivestockMinimized())
+                || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
                 || (i == ChatEntryIndex && isChatMinimized()))
                 batch.Draw(Game1.staminaRect, new Rectangle(1, slot.Y + 8, 1, SlotHeight - 16), UiStyle.Muted * config.Opacity);

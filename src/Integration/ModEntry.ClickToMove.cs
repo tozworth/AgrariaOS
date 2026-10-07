@@ -3,6 +3,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Tools;
 
 namespace AgrariaOS;
 
@@ -14,7 +15,9 @@ public sealed partial class ModEntry
         && !Game1.freezeControls && !Game1.panMode && Game1.locationRequest == null
         && Game1.game1.IsActiveNoOverlay && !Game1.player.UsingTool && !Game1.player.isEating
         && Game1.player.freezePause <= 0 && !Game1.player.IsSitting() && !Game1.player.isRidingHorse()
-        && !Game1.player.swimming.Value && !Game1.player.isRafting;
+        && !Game1.player.swimming.Value && !Game1.player.isRafting
+        // Weapons keep vanilla left-click (swing/aim); never start or continue pathfinding while armed.
+        && Game1.player.CurrentTool is not MeleeWeapon && Game1.player.CurrentTool is not Slingshot;
 
     private static bool HasManualMovement()
     {
@@ -38,7 +41,11 @@ public sealed partial class ModEntry
             if (beforeUpdate)
                 clickToMove.Value.BeforeUpdate(CanClickToMove, Context.IsWorldReady && HasManualMovement());
             else
+            {
                 clickToMove.Value.AfterUpdate(CanClickToMove);
+                if (clickToMove.Value.TryConsumeInteractArrival(out Point tile, out var perform))
+                    TryPerformInteractArrival(tile, perform);
+            }
         }
         catch (Exception ex)
         {

@@ -20,6 +20,11 @@ internal sealed class ClickToMove
     private Farmer? toolFarmer;
     private Tool? startedTool;
     private int releaseTicks;
+    private Func<Point>? interactTile;
+    private Func<bool>? interactValid;
+    private Action<Farmer>? interactPerform;
+    private Point? arrivedInteractTile;
+    private Action<Farmer>? arrivedInteractPerform;
 
     internal Point? Destination => controller != null ? target?.HitTile(destination) ?? destination : null;
 
@@ -48,6 +53,52 @@ internal sealed class ClickToMove
             Game1.playSound("cancel");
         }
         return true;
+    }
+
+    internal bool StartInteract(InteractRequest request, Point clicked)
+    {
+        Cancel();
+        Farmer who = Game1.player;
+        GameLocation here = Game1.currentLocation;
+        // Never replace an event's or another mod's movement controller.
+        if (who.controller != null)
+            return false;
+        if (!here.isTileOnMap(clicked))
+            return true;
+        farmer = who;
+        location = here;
+        day = Game1.stats.DaysPlayed;
+        warpDestination = null;
+        destination = clicked;
+        // Right-click arrivals never swing tools or cross map-edge warps; the stored
+        // action performs the vanilla right-click path directly on arrival.
+        target = request.Move;
+        interactTile = request.Tile;
+        interactValid = request.Valid;
+        interactPerform = request.Perform;
+        if (!Plan())
+        {
+            Cancel();
+            Game1.playSound("cancel");
+            // Unreachable: fall through to vanilla facing-tile plus Lookup info.
+            return false;
+        }
+        return true;
+    }
+
+    internal bool TryConsumeInteractArrival(out Point tile, out Action<Farmer> perform)
+    {
+        if (arrivedInteractTile is { } want && arrivedInteractPerform is { } action)
+        {
+            tile = want;
+            perform = action;
+            arrivedInteractTile = null;
+            arrivedInteractPerform = null;
+            return true;
+        }
+        tile = default;
+        perform = _ => { };
+        return false;
     }
 
     private bool CanWalk(Point tile)
@@ -98,6 +149,7 @@ internal sealed class ClickToMove
             return;
         if (!canMove || manualMovement || farmer != Game1.player || location != Game1.currentLocation
             || day != Game1.stats.DaysPlayed || farmer.controller != controller || target?.IsValid() == false
+            || interactValid?.Invoke() == false
             || (warpDestination is { } exit && WarpDestination.Resolve(location!, farmer, exit) != exit))
             Cancel();
     }
@@ -120,6 +172,52 @@ internal sealed class ClickToMove
         if (arrived)
         {
             Farmer who = farmer!;
+            // Right-click arrivals queue the vanilla right-click action for ModEntry to
+            // perform with its routing flag held. Moving targets that wandered off get
+            // one chase replan instead of interacting with empty air.
+            if (interactTile != null && interactPerform != null)
+            {
+                Func<bool>? valid = interactValid;
+                Func<Point>? tileGetter = interactTile;
+                Action<Farmer>? perform = interactPerform;
+                if (valid?.Invoke() == false)
+                {
+                    Cancel();
+                    return;
+                }
+                Point want = tileGetter!();
+                if (!Utility.tileWithinRadiusOfPlayer(want.X, want.Y, 1, who))
+                {
+                    if (++replans > 3)
+                    {
+                        Cancel();
+                        Game1.playSound("cancel");
+                    }
+                    else if (InteractProbe.TryResolve(location!, who, want) is { } chase)
+                    {
+                        target = chase.Move;
+                        destination = want;
+                        interactTile = chase.Tile;
+                        interactValid = chase.Valid;
+                        interactPerform = chase.Perform;
+                        if (!Plan())
+                        {
+                            Cancel();
+                            Game1.playSound("cancel");
+                        }
+                    }
+                    else
+                    {
+                        Cancel();
+                        Game1.playSound("cancel");
+                    }
+                    return;
+                }
+                Cancel();
+                arrivedInteractTile = want;
+                arrivedInteractPerform = perform;
+                return;
+            }
             ApproachTarget? approached = target;
             ToolTarget? action = target as ToolTarget;
             Cancel();
@@ -197,5 +295,10 @@ internal sealed class ClickToMove
         arrived = false;
         stalledMilliseconds = 0;
         replans = 0;
+        interactTile = null;
+        interactValid = null;
+        interactPerform = null;
+        arrivedInteractTile = null;
+        arrivedInteractPerform = null;
     }
 }

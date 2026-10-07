@@ -15,6 +15,7 @@ public sealed partial class ModEntry
 {
     private readonly WorldContextMenuRouter worldContextMenus = new();
     private readonly PerScreen<bool> rightClickAction = new(() => false);
+    private readonly PerScreen<bool> interactArrival = new(() => false);
     private readonly PerScreen<Phone?> telephoneTarget = new(() => null);
     private readonly PerScreen<bool> worldInteractionsFailed = new(() => false);
     private bool worldInteractionPatchesInstalled;
@@ -53,7 +54,7 @@ public sealed partial class ModEntry
     }
 
     private bool CanRouteWorldInteraction => worldInteractionPatchesInstalled && UsePelicom
-        && !worldInteractionsFailed.Value && rightClickAction.Value && Context.IsPlayerFree
+        && !worldInteractionsFailed.Value && (rightClickAction.Value || interactArrival.Value) && Context.IsPlayerFree
         && pelicom.Value.IsInteractive;
 
     // Scope only the game's mouse action dispatch. Let vanilla resolve targets, reach,
@@ -235,5 +236,47 @@ public sealed partial class ModEntry
         worldInteractionsFailed.Value = true;
         windowManager.Value.CloseContextMenu();
         Monitor.Log($"World right-click menu failed; restored vanilla interactions for this screen.\n{ex}", LogLevel.Error);
+    }
+
+    private bool TryStartRightClickInteract(Point tile)
+    {
+        try
+        {
+            // Shift keeps the vanilla fallthrough so far tiles stay inspectable via Lookup.
+            // Furniture placement stays vanilla: arrival only performs right-click checks.
+            if (worldInteractionsFailed.Value || Game1.player.ActiveObject is Furniture)
+                return false;
+            var request = Movement.InteractProbe.TryResolve(Game1.currentLocation, Game1.player, tile);
+            if (request == null)
+                return false;
+            return clickToMove.Value.StartInteract(request, tile);
+        }
+        catch (Exception ex)
+        {
+            OnClickToMoveFailed(ex);
+            return true;
+        }
+    }
+
+    private void TryPerformInteractArrival(Point tile, Action<Farmer> perform)
+    {
+        if (!UsePelicom || worldInteractionsFailed.Value || !Context.IsPlayerFree)
+            return;
+        Farmer farmer = Game1.player;
+        if (!Utility.tileWithinRadiusOfPlayer(tile.X, tile.Y, 1, farmer))
+            return;
+        interactArrival.Value = true;
+        try
+        {
+            perform(farmer);
+        }
+        catch (Exception ex)
+        {
+            OnWorldInteractionFailed(ex);
+        }
+        finally
+        {
+            interactArrival.Value = false;
+        }
     }
 }

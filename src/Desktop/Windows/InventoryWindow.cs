@@ -41,13 +41,13 @@ internal sealed class InventoryWindow : OsWindow
         this.lookupAnything = lookupAnything;
         grid = new GridView<Item>(
             GridColumn<Item>.Create("Name", 264, 44, item => item.DisplayName, item => item.DisplayName,
-                comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell),
+                comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell, id: "name"),
             GridColumn<Item>.Create("Qty", 52, 28, item => item.Stack.ToString(CultureInfo.InvariantCulture),
-                item => item.Stack, rightAligned: true),
+                item => item.Stack, rightAligned: true, id: "quantity"),
             GridColumn<Item>.Create("Category", 160, 36, item => item.getCategoryName(), item => item.getCategoryName(),
-                textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase),
+                textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "category"),
             GridColumn<Item>.Create("Value", 100, 36, item => GetValueText(item, knowsPrices),
-                item => GetValue(item, knowsPrices), rightAligned: true));
+                item => GetValue(item, knowsPrices), rightAligned: true, id: "value"));
         if (chest != null)
             ShowChest(chest);
     }
@@ -167,6 +167,8 @@ internal sealed class InventoryWindow : OsWindow
 
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
     {
+        if (grid.GetHeaderContextMenuItems(cursor) is { } columns)
+            return columns;
         Item? item = grid.GetRow(cursor);
         if (item == null)
             return null;
@@ -243,6 +245,8 @@ internal sealed class InventoryWindow : OsWindow
     }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
+    internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
+        => grid.ConfigureColumnVisibility(hiddenColumns, onChanged);
     internal override void DragContent(Point cursor) => grid.Drag(cursor);
     internal override void EndContentDrag() => grid.EndDrag();
     internal override void ReceiveScroll(int delta) => grid.ReceiveScroll(delta);

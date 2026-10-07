@@ -16,13 +16,13 @@ internal sealed class LivestockWindow : OsWindow
     private const int IconSize = 20;
     private readonly GridView<Character> grid = new(
         GridColumn<Character>.Create("Name", 210, 44, GetDisplayName, GetDisplayName,
-            comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell),
+            comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell, id: "name"),
         GridColumn<Character>.Create("Type", 140, 36, GetTypeName, GetTypeName,
-            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase),
-        GridColumn<Character>.Create("Hearts", 64, 28, GetHeartsText, GetFriendship, rightAligned: true),
-        GridColumn<Character>.Create("Petted", 80, 36, GetPetText, GetPetSort),
+            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "type"),
+        GridColumn<Character>.Create("Hearts", 64, 28, GetHeartsText, GetFriendship, rightAligned: true, id: "hearts"),
+        GridColumn<Character>.Create("Petted", 80, 36, GetPetText, GetPetSort, id: "petted"),
         GridColumn<Character>.Create("Treat", 80, 36, GetTreatText, GetTreatText,
-            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase));
+            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "treat"));
 
     internal override string Id => WindowId;
     internal override string Title => "Livestock";
@@ -49,6 +49,9 @@ internal sealed class LivestockWindow : OsWindow
     }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
+    internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
+        => grid.ConfigureColumnVisibility(hiddenColumns, onChanged);
+    internal override ContextMenuItem[]? GetContextMenuItems(Point cursor) => grid.GetHeaderContextMenuItems(cursor);
     internal override void DragContent(Point cursor) => grid.Drag(cursor);
     internal override void EndContentDrag() => grid.EndDrag();
     internal override void ReceiveScroll(int delta) => grid.ReceiveScroll(delta);

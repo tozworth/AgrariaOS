@@ -15,9 +15,9 @@ internal sealed class MailWindow : OsWindow
     private const int IconSize = 20;
     private readonly GridView<MailRow> grid = new(
         GridColumn<MailRow>.Create("Title", 200, 44, row => row.Title, row => row.Title,
-            comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawTitleCell),
+            comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawTitleCell, id: "title"),
         GridColumn<MailRow>.Create("Body", 360, 60, row => row.Preview, row => row.Preview,
-            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase));
+            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "body"));
 
     internal override string Id => WindowId;
     internal override string Title => "Mail";
@@ -58,6 +58,9 @@ internal sealed class MailWindow : OsWindow
             return;
         Game1.activeClickableMenu = new LetterViewerMenu(raw, row.Id, fromCollection: true);
     }
+    internal override ContextMenuItem[]? GetContextMenuItems(Point cursor) => grid.GetHeaderContextMenuItems(cursor);
+    internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
+        => grid.ConfigureColumnVisibility(hiddenColumns, onChanged);
     internal override void DragContent(Point cursor) => grid.Drag(cursor);
     internal override void EndContentDrag() => grid.EndDrag();
     internal override void ReceiveScroll(int delta) => grid.ReceiveScroll(delta);

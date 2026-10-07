@@ -4,6 +4,7 @@ using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Notifications;
 using AgrariaOS.Interactions;
 using AgrariaOS.Integration;
+using AgrariaOS.Mining;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -63,6 +64,7 @@ internal sealed class WindowManager
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything));
     internal void OpenLivestock() => Open(LivestockWindow.WindowId, () => new LivestockWindow());
+    internal void OpenMiningLedger(MiningLedger ledger) => Open(MiningLedgerWindow.WindowId, () => new MiningLedgerWindow(ledger));
     internal void OpenChestInventory(Chest chest)
     {
         Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest, lookupAnything));
@@ -86,15 +88,22 @@ internal sealed class WindowManager
         if (window == null)
         {
             // Resolve ownership on first open, after the save's farmer is available.
+            long farmerId = Game1.player.UniqueMultiplayerID;
             if (layouts == null)
             {
-                long farmerId = Game1.player.UniqueMultiplayerID;
                 if (!config.WindowLayouts.TryGetValue(farmerId, out layouts))
                     config.WindowLayouts[farmerId] = layouts = new();
             }
             window = create();
             if (layouts.TryGetValue(id, out WindowPlacement? placement))
                 window.RestorePlacement(placement);
+            if (!config.WindowHiddenColumns.TryGetValue(farmerId, out Dictionary<string, string[]>? columnLayouts))
+                config.WindowHiddenColumns[farmerId] = columnLayouts = new();
+            window.ConfigureColumnVisibility(columnLayouts.GetValueOrDefault(id) ?? Array.Empty<string>(), hiddenColumns =>
+            {
+                columnLayouts[id] = hiddenColumns;
+                saveConfig();
+            });
         }
         window.IsMinimized = false;
         windows.Remove(window);
@@ -234,7 +243,8 @@ internal sealed class WindowManager
             if (items != null)
             {
                 ContextMenuInfo? info = window.GetContextMenuInfo(cursor);
-                ShowContextMenu(cursor, items, isValid: info?.IsValid, info: info);
+                ShowContextMenu(cursor, items, isValid: () => window.IsValid && !window.IsMinimized
+                    && windows.Contains(window) && (info?.IsValid() ?? true), info: info);
             }
             else
                 window.ReceiveContentClick(cursor, leftClick: false);

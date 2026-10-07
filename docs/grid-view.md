@@ -8,7 +8,9 @@ Define columns with `GridColumn<TRow>.Create<TKey>`. Each column supplies a head
 preferred/minimum width, display text, and a typed sort key. Use numeric keys for
 quantities, prices, or animal stats, and `StringComparer.CurrentCultureIgnoreCase`
 for localized text. Null keys stay last in both directions. Equal keys retain
-source order. A custom `drawCell` callback can render an icon or badge within its
+source order. Supply a unique, stable `id` for each column so saved visibility
+survives heading changes or localization; the heading is the default ID.
+A custom `drawCell` callback can render an icon or badge within its
 cell bounds; ordinary cells use the common pixel-aligned text renderer.
 
 In the window's `DrawContent`:
@@ -26,10 +28,22 @@ Forward content clicks, drags, drag completion, and wheel input to `ReceiveClick
 header arrows, paired column resizing, row layout, backgrounds, and the scrollbar.
 State belongs to each grid instance; the column count is unrestricted.
 
+Forward `GetContextMenuItems` to `GetHeaderContextMenuItems` before checking row
+actions. Right-clicking any visible header returns a checkbox menu for all columns.
+At least one column stays visible. Hidden columns keep their preferred widths and
+return in their original order; resizing pairs adjacent visible columns. Hiding
+the sorted column restores source order. Forward the window's
+`ConfigureColumnVisibility` to the grid so the desktop manager restores choices
+and saves each toggle in `ModConfig.WindowHiddenColumns`, keyed by farmer and
+window ID. Inventory and chest inventory have separate choices; all chests share
+the chest window's choices. These survive closing windows and game reloads.
+Obsolete column IDs are ignored, new columns start visible, and a config hiding
+every column restores the first header so the menu remains accessible.
+
 Use `GetRow(cursor)` for selection, context menus, and row actions. It follows the
 last drawn layout and ignores partial/empty rows. Use `RowsBounds` for empty-area
 and drop-target checks. `Layout` is also available without drawing. Windows own
 selection semantics and domain actions; Shift-selection should use `grid.Rows`,
 while inventory transfers continue to use source slot order. `Clear` removes the
 snapshot, hit boxes, scroll position, and active drag when switching sources,
-preserving the selected sort and column widths.
+preserving the selected sort, column widths, and visibility.

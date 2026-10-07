@@ -18,6 +18,10 @@ internal sealed class LookupWindow : OsWindow
     private readonly uint day = Game1.stats.DaysPlayed;
     private IClickableMenu? menu;
     private RenderTarget2D? target;
+    private RenderTarget2D? iconTarget;
+    private object? subject;
+    private bool iconDirty;
+    private bool hasIcon;
     private SpriteBatch? overlay;
     private Rectangle contentBounds;
     private string name = "Info";
@@ -28,7 +32,7 @@ internal sealed class LookupWindow : OsWindow
     internal override string Id => WindowId;
     internal override string Title => name;
     internal override string TitleSubtext => "Info";
-    internal override int Icon => 76;
+    internal override int Icon => UiStyle.NotificationIcon;
     internal override bool CanResize => false;
     internal override Point DefaultSize => new(960, 600);
     protected override bool DrawContentBackground => false; // rendered content supplies its own single opacity layer
@@ -44,6 +48,9 @@ internal sealed class LookupWindow : OsWindow
                 integration.DisposeMenu(menu);
             menu = next;
             name = integration.GetName(subject);
+            this.subject = subject;
+            iconDirty = true;
+            hasIcon = false;
             closed = false;
             error = null;
             contentBounds = Rectangle.Empty; // require a new draw before using link geometry
@@ -70,6 +77,9 @@ internal sealed class LookupWindow : OsWindow
         menu = null;
         target?.Dispose();
         target = null;
+        iconTarget?.Dispose();
+        iconTarget = null;
+        subject = null;
         overlay?.Dispose();
         overlay = null;
     }
@@ -127,6 +137,31 @@ internal sealed class LookupWindow : OsWindow
         }
     }
 
+    internal override void DrawTitleIcon(SpriteBatch batch, Point position, ModConfig config)
+    {
+        if (iconDirty && subject != null)
+        {
+            iconDirty = false;
+            try
+            {
+                // Item/terrain portraits assume a 64px menu slot even when given a smaller size.
+                // Some LA portraits build a texture in a nested render pass before drawing.
+                iconTarget ??= new RenderTarget2D(Game1.graphics.GraphicsDevice, 64, 64, false,
+                    SurfaceFormat.Color, DepthFormat.None, 0, RenderTargetUsage.PreserveContents);
+                RenderInto(iconTarget, Color.Transparent, () => hasIcon = integration.DrawSubjectIcon(subject, overlay!, 64));
+            }
+            catch (Exception ex)
+            {
+                hasIcon = false;
+                integration.ReportFailure(ex);
+            }
+        }
+        if (hasIcon)
+            batch.Draw(iconTarget!, new Rectangle(position.X, position.Y, 18, 18), Color.White * config.Opacity);
+        else
+            base.DrawTitleIcon(batch, position, config);
+    }
+
     private void Render(Point size)
     {
         GraphicsDevice device = Game1.graphics.GraphicsDevice;
@@ -135,8 +170,15 @@ internal sealed class LookupWindow : OsWindow
             target?.Dispose();
             target = new RenderTarget2D(device, size.X, size.Y, false, SurfaceFormat.Color, DepthFormat.None);
         }
-        overlay ??= new SpriteBatch(device);
         integration.LayoutMenu(menu!, size);
+        // LA's content blend preserves destination alpha, so establish an opaque base.
+        RenderInto(target, UiStyle.Background, () => integration.DrawMenu(menu!, overlay!));
+    }
+
+    private void RenderInto(RenderTarget2D destination, Color background, Action draw)
+    {
+        GraphicsDevice device = Game1.graphics.GraphicsDevice;
+        overlay ??= new SpriteBatch(device);
 
         // The game's HUD batch is deferred, so none of its queued draws are redirected.
         // LA's separate batches flush into this target; then our texture participates in
@@ -151,12 +193,11 @@ internal sealed class LookupWindow : OsWindow
         bool begun = false;
         try
         {
-            device.SetRenderTarget(target);
-            // LA's content blend preserves destination alpha, so establish an opaque base.
-            device.Clear(UiStyle.Background);
+            device.SetRenderTarget(destination);
+            device.Clear(background);
             overlay.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp);
             begun = true;
-            integration.DrawMenu(menu!, overlay);
+            draw();
             overlay.End();
             begun = false;
         }

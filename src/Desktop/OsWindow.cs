@@ -130,6 +130,7 @@ internal abstract class OsWindow
 
     internal virtual void ReceiveContentClick(Point cursor, bool leftClick) { }
     internal virtual ContextMenuItem[]? GetContextMenuItems(Point cursor) => null;
+    internal virtual void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged) { }
     internal virtual void DragContent(Point cursor) { }
     internal virtual void EndContentDrag() { }
     internal virtual void ReceiveScroll(int delta) { }

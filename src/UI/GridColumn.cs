@@ -7,6 +7,7 @@ namespace AgrariaOS.UI;
 // A column supplies its text and typed sort key; custom cells can draw icons or badges.
 internal sealed class GridColumn<TRow> where TRow : class
 {
+    internal string Id { get; }
     internal string Heading { get; }
     internal int PreferredWidth { get; }
     internal int MinimumWidth { get; }
@@ -16,12 +17,15 @@ internal sealed class GridColumn<TRow> where TRow : class
     private readonly Action<SpriteBatch, TRow, Rectangle, ModConfig>? drawCell;
     private readonly Func<IEnumerable<TRow>, bool, IEnumerable<TRow>> orderRows;
 
-    private GridColumn(string heading, int preferredWidth, int minimumWidth, Func<TRow, string> getText,
+    private GridColumn(string id, string heading, int preferredWidth, int minimumWidth, Func<TRow, string> getText,
         bool rightAligned, Color textColor, Action<SpriteBatch, TRow, Rectangle, ModConfig>? drawCell,
         Func<IEnumerable<TRow>, bool, IEnumerable<TRow>> orderRows)
     {
         if (minimumWidth < 0 || preferredWidth < minimumWidth)
             throw new ArgumentOutOfRangeException(nameof(preferredWidth), "Column widths must be nonnegative and meet the minimum.");
+        if (string.IsNullOrWhiteSpace(id))
+            throw new ArgumentException("A column needs a stable ID.", nameof(id));
+        Id = id;
         Heading = heading;
         PreferredWidth = preferredWidth;
         MinimumWidth = minimumWidth;
@@ -35,7 +39,7 @@ internal sealed class GridColumn<TRow> where TRow : class
     internal static GridColumn<TRow> Create<TKey>(string heading, int preferredWidth, int minimumWidth,
         Func<TRow, string> getText, Func<TRow, TKey> getSortKey, bool rightAligned = false,
         Color? textColor = null, IComparer<TKey>? comparer = null,
-        Action<SpriteBatch, TRow, Rectangle, ModConfig>? drawCell = null)
+        Action<SpriteBatch, TRow, Rectangle, ModConfig>? drawCell = null, string? id = null)
     {
         IEnumerable<TRow> OrderRows(IEnumerable<TRow> rows, bool descending)
         {
@@ -47,7 +51,7 @@ internal sealed class GridColumn<TRow> where TRow : class
                 : keyedRows.ThenBy(row => row.Key, comparer)).Select(row => row.Row);
         }
 
-        return new GridColumn<TRow>(heading, preferredWidth, minimumWidth, getText, rightAligned,
+        return new GridColumn<TRow>(id ?? heading, heading, preferredWidth, minimumWidth, getText, rightAligned,
             textColor ?? UiStyle.Primary, drawCell, OrderRows);
     }
 
