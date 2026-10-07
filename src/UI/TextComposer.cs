@@ -11,6 +11,8 @@ internal sealed class TextComposer : IKeyboardSubscriber
 {
     private const int TextLimit = 2048;
     private readonly Action<string> submit;
+    private readonly string placeholder;
+    private readonly bool clearOnSubmit;
     private string text = "";
     private int caret;
     private int firstCharacter;
@@ -28,13 +30,20 @@ internal sealed class TextComposer : IKeyboardSubscriber
     }
     internal bool CanSubmit => !string.IsNullOrWhiteSpace(text);
 
-    internal TextComposer(Action<string> submit) => this.submit = submit;
+    internal TextComposer(Action<string> submit, string placeholder = "Message Session...", bool clearOnSubmit = true)
+    {
+        this.submit = submit;
+        this.placeholder = placeholder;
+        this.clearOnSubmit = clearOnSubmit;
+    }
 
     internal void Submit()
     {
         if (!CanSubmit)
             return;
         submit(text.Trim());
+        if (!clearOnSubmit)
+            return;
         text = "";
         caret = firstCharacter = 0;
         pendingHighSurrogate = null;
@@ -124,7 +133,7 @@ internal sealed class TextComposer : IKeyboardSubscriber
             end = Next(end);
         string visible = text[firstCharacter..end];
         float y = bounds.Y + (bounds.Height - Game1.smallFont.MeasureString("A").Y * config.FontScale) / 2;
-        UiText.Draw(batch, text.Length == 0 ? UiText.Fit("Message Session...", width, config.FontScale) : visible,
+        UiText.Draw(batch, text.Length == 0 ? UiText.Fit(placeholder, width, config.FontScale) : visible,
             new Vector2(bounds.X + 6, y), text.Length == 0 ? UiStyle.Muted : UiStyle.Primary, config);
         if (Selected && Game1.currentGameTime.TotalGameTime.TotalMilliseconds % 1000 < 500)
         {

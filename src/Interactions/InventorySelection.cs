@@ -12,6 +12,14 @@ internal sealed class InventorySelection
     internal bool Contains(Item item) => selected.Contains(item);
     internal Item[] InSlotOrder(IReadOnlyList<Item> items) => items.Where(selected.Contains).ToArray();
 
+    internal Item[] ContextTargets(Item item, IReadOnlyList<Item> items)
+    {
+        Refresh(items);
+        if (!Contains(item))
+            SelectOnly(item);
+        return InSlotOrder(items);
+    }
+
     internal void Clear()
     {
         selected.Clear();

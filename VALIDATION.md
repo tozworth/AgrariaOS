@@ -55,9 +55,23 @@ not verify visual behavior. Verify in-game with Stardew 1.6.15 and SMAPI 4.5.2:
   text should log once per page while choices still wait for input.
 - Right-click Pelicom buttons and blank rail space: Auto-hide starts unchecked, toggles on click,
   and retains its check when reopened without hiding the rail. Check separate split-screen state.
-- Right-click visible Inventory item rows, including after wheel/thumb scrolling: Split and
-  Jettison should appear and close on selection without changing items or quantities. Headers,
-  empty rows, footer and scrollbar should not open an item menu.
+- Right-click backpack rows after wheel/thumb scrolling: selected rows keep the group, while
+  unselected rows select only that stack. Split must be disabled for multiple selected stacks.
+  Include distinct identical stacks and offscreen/Ctrl+A selections. Headers, empty rows, footer
+  and scrollbar should not open an item menu; chest rows retain no item menu.
+- Split 400 into 300/100 via Enter and the Split button. Check the first empty slot, quality and
+  item data, and that matching stacks stay separate. Reject zero, negative, nonnumeric, overflow,
+  the whole stack and a full backpack without changing quantities; correct an invalid entry and retry.
+  Check single/nonstackable items, paste/editing, text scales 1/2, and no movement/tool/menu hotkeys
+  while typing. Escape, Cancel, outside clicks, F8 and viewport resize should cancel and release focus.
+  Changing location/day, losing the source stack and returning to title should cancel without a split.
+- Jettison whole stacks with basic and copper/steel/gold/iridium trash cans; compare the payout with
+  vanilla, including qualities, unsellable items and furniture. Jettison must be gray for protected
+  tools/special items or groups containing them, with no hover highlight; clicking it keeps the popup
+  open and items intact. One Jettison click must remove all selected stacks, leave unselected stacks
+  intact and reclaim vanilla money for each trashed stack. Trashing the active slot should clear
+  it normally. Repeated clicks and stale rows must not
+  pay twice. Check separate split-screen backpack actions and keyboard focus.
 - Right-click empty/populated wooden, stone, big and Junimo chests within vanilla reach: expect
   the Inventory table with chest contents in slot order and actual capacity. Check
   Price Catalogue values, wheel/thumb scrolling and column resizing at UI/text scales 1/2.

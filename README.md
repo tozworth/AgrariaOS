@@ -19,8 +19,14 @@ starting a new day or removing the chest closes the view. F8 keeps vanilla chest
 gift boxes and reward chests retain their original behavior.
 
 Right-click the Pelicom rail for a checkable Auto-hide placeholder (session-only, with no hiding
-behavior), or an Inventory item row for Split and Jettison placeholders. These item actions do
-not change the backpack. Click outside or press Escape to dismiss a context menu.
+behavior), or a backpack item row for Split and Jettison. Right-clicking a selected row keeps the
+group; an unselected row selects that stack alone. Split is disabled for multiple selected stacks.
+Split opens a quantity dialog and puts the entered amount into a separate stack in the first
+empty backpack slot; the original keeps
+the remainder. An empty slot and an amount from 1 through the stack size minus 1 are required.
+Jettison trashes all selected stacks at once using vanilla rules, including money reclaimed by
+upgraded trash cans; Jettison is grayed out if any selected item is protected. Click outside or
+press Escape to dismiss a context menu or cancel the split dialog.
 
 Right-click a TV to choose from its currently available channels, or a telephone to see all
 contacts together (including contacts supplied by other mods). These world menus use a

@@ -58,10 +58,10 @@ internal sealed class WindowManager
     }
 
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
-    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow());
+    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config));
     internal void OpenChestInventory(Chest chest)
     {
-        Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(chest));
+        Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest));
         ((InventoryWindow)windows.Last()).ShowChest(chest);
     }
     internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));

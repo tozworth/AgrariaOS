@@ -5,7 +5,7 @@ using StardewValley;
 
 namespace AgrariaOS.UI;
 
-internal sealed record ContextMenuItem(string Text, Action? OnClick = null, bool? IsChecked = null);
+internal sealed record ContextMenuItem(string Text, Action? OnClick = null, bool? IsChecked = null, bool IsEnabled = true);
 
 // One popup per desktop. Entries may be plain actions or checkable actions.
 internal sealed class ContextMenu
@@ -93,7 +93,11 @@ internal sealed class ContextMenu
             {
                 if (RowBounds(i).Contains(cursor))
                 {
-                    action = items[firstRow + i].OnClick;
+                    ContextMenuItem item = items[firstRow + i];
+                    // Disabled rows consume the press and leave the popup open.
+                    if (!item.IsEnabled)
+                        return true;
+                    action = item.OnClick;
                     break;
                 }
             }
@@ -122,21 +126,22 @@ internal sealed class ContextMenu
         {
             Rectangle row = RowBounds(i);
             ContextMenuItem item = items[firstRow + i];
-            if (row.Contains(cursor))
+            Color color = item.IsEnabled ? UiStyle.Primary : UiStyle.Muted;
+            if (item.IsEnabled && row.Contains(cursor))
                 batch.Draw(Game1.staminaRect, row, UiStyle.Border * config.Opacity);
 
             if (item.IsChecked.HasValue)
             {
                 Rectangle check = new(row.X + Padding, row.Center.Y - 5, 10, 10);
-                UiStyle.DrawBorder(batch, check, config.Opacity);
+                UiStyle.DrawBorder(batch, check, config.Opacity * (item.IsEnabled ? 1f : 0.5f));
                 if (item.IsChecked.Value)
-                    batch.Draw(Game1.staminaRect, new Rectangle(check.X + 3, check.Y + 3, 4, 4), UiStyle.Primary * config.Opacity);
+                    batch.Draw(Game1.staminaRect, new Rectangle(check.X + 3, check.Y + 3, 4, 4), color * config.Opacity);
             }
 
             string text = UiText.Fit(item.Text, row.Width - checkWidth - Padding * 2 - 1, config.FontScale);
             Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
             UiText.Draw(batch, text, new Vector2(row.X + Padding + checkWidth, row.Y + (row.Height - size.Y) / 2),
-                UiStyle.Primary, config);
+                color, config);
         }
         // A narrow scroll position marker leaves the full row available for its action.
         if (visibleRows < items.Length)

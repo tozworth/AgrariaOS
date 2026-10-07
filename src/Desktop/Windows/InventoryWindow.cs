@@ -20,7 +20,7 @@ internal sealed class InventoryWindow : OsWindow
     private const int ScrollbarWidth = 10;
     private static readonly string[] Headings = { "Name", "Qty", "Category", "Value" };
     private static readonly int[] MinimumWidths = { 44, 28, 36, 36 };
-    private static readonly ContextMenuItem[] ItemMenu = { new("Split"), new("Jettison") };
+    private readonly ModConfig config;
     private readonly int[] preferredWidths = { 264, 52, 160, 100 };
     private readonly int[] columnWidths = new int[4];
     private readonly Rectangle[] headers = new Rectangle[4];
@@ -49,8 +49,9 @@ internal sealed class InventoryWindow : OsWindow
     internal bool ContainsDropPoint(Point cursor) => rowsBounds.Contains(cursor);
     internal Item[] SelectedItems => selection.InSlotOrder(items);
 
-    internal InventoryWindow(Chest? chest = null)
+    internal InventoryWindow(ModConfig config, Chest? chest = null)
     {
+        this.config = config;
         if (chest != null)
             ShowChest(chest);
     }
@@ -248,7 +249,62 @@ internal sealed class InventoryWindow : OsWindow
     }
 
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
-        => chest == null && itemRowBounds.Any(row => row.Contains(cursor)) ? ItemMenu : null;
+    {
+        int row = itemRowBounds.FindIndex(bounds => bounds.Contains(cursor));
+        if (chest != null || row < 0 || firstRow + row >= items.Count)
+            return null;
+        Item item = items[firstRow + row];
+        Farmer farmer = Game1.player;
+        GameLocation location = Game1.currentLocation;
+        uint day = Game1.stats.DaysPlayed;
+        bool IsCurrent() => Context.IsWorldReady && Game1.player == farmer
+            && Game1.currentLocation == location && Game1.stats.DaysPlayed == day
+            && IsValid && !IsMinimized && InventoryTransferBatch.IndexOf(farmer.Items, item) >= 0;
+        if (!IsCurrent())
+            return null;
+        Item[] targets = selection.ContextTargets(item, farmer.Items.Where(current => current != null).ToArray());
+        return new ContextMenuItem[]
+        {
+            new("Split", () =>
+            {
+                if (targets.Length != 1 || !IsCurrent() || !Context.IsPlayerFree)
+                    return;
+                if (item.maximumStackSize() <= 1 || item.Stack <= 1)
+                {
+                    TransferStatus = "This item cannot be split.";
+                    return;
+                }
+                Game1.activeClickableMenu = new NumberEntryMenu(config, $"Split {item.DisplayName}",
+                    () => $"Quantity for the new stack (1-{item.Stack - 1})", amount =>
+                    {
+                        string? error = InventoryStackActions.Split(farmer.Items, farmer.MaxItems, item, amount);
+                        if (error == null)
+                            TransferStatus = null;
+                        return error;
+                    }, IsCurrent);
+            }, IsEnabled: targets.Length == 1),
+            new("Jettison", () =>
+            {
+                if (!IsCurrent() || !Context.IsPlayerFree)
+                    return;
+                Item[] liveTargets = targets.Where(target => InventoryTransferBatch.IndexOf(farmer.Items, target) >= 0).ToArray();
+                if (liveTargets.Any(target => !target.canBeTrashed()))
+                {
+                    TransferStatus = "The selection contains an item that cannot be trashed.";
+                    return;
+                }
+                // Match vanilla's canBeTrashed guard and trash helper, including
+                // upgraded-can reclamation and special-item bookkeeping.
+                foreach (Item target in liveTargets)
+                {
+                    farmer.removeItemFromInventory(target);
+                    Utility.trashItem(target);
+                }
+                selection.Refresh(farmer.Items.Where(current => current != null).ToArray());
+                TransferStatus = null;
+            }, IsEnabled: targets.All(target => target.canBeTrashed()))
+        };
+    }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick)
     {

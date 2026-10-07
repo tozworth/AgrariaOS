@@ -4,6 +4,7 @@ using AgrariaOS.Desktop;
 using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Hud;
 using AgrariaOS.Notifications;
+using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -75,6 +76,12 @@ public sealed partial class ModEntry : Mod
                 pelicom.Value.draw(e.SpriteBatch);
         };
         helper.Events.Display.WindowResized += (_, _) => windowManager.Value.InvalidateLayout();
+        helper.Events.Display.MenuChanged += (_, e) =>
+        {
+            // Also release the text field if another mod or a title transition replaces it.
+            if (e.OldMenu is NumberEntryMenu numberEntry)
+                numberEntry.emergencyShutDown();
+        };
         helper.Events.GameLoop.UpdateTicked += (_, _) =>
         {
             // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
@@ -106,6 +113,10 @@ public sealed partial class ModEntry : Mod
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
+        // Release the modal before evaluating the usual player-free F8 fallback.
+        if (e.Button == config.ToggleKey && Game1.activeClickableMenu is NumberEntryMenu numberEntry)
+            numberEntry.exitThisMenu(playSound: false);
+
         if (UsePelicom && !e.IsSuppressed() && e.Button is SButton.MouseLeft or SButton.MouseRight)
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
