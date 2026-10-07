@@ -3,6 +3,7 @@ using AgrariaOS.Chat;
 using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Notifications;
 using AgrariaOS.Interactions;
+using AgrariaOS.Integration;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -20,6 +21,7 @@ internal sealed class WindowManager
     private readonly Action<Exception> onDrawFailed;
     private readonly Action saveConfig;
     private readonly Action<Exception> onTransferFailed;
+    private readonly LookupAnythingIntegration lookupAnything;
     private Dictionary<string, WindowPlacement>? layouts;
     // Last entry is the front window, in both drawing and hit testing.
     private readonly List<OsWindow> windows = new();
@@ -48,20 +50,21 @@ internal sealed class WindowManager
         .Where(button => button.TryGetKeyboard(out _)).ToArray();
 
     internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed,
-        Action saveConfig, Action<Exception> onTransferFailed)
+        Action saveConfig, Action<Exception> onTransferFailed, LookupAnythingIntegration lookupAnything)
     {
         this.config = config;
         this.isVisible = isVisible;
         this.onDrawFailed = onDrawFailed;
         this.saveConfig = saveConfig;
         this.onTransferFailed = onTransferFailed;
+        this.lookupAnything = lookupAnything;
     }
 
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
-    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config));
+    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything));
     internal void OpenChestInventory(Chest chest)
     {
-        Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest));
+        Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest, lookupAnything));
         ((InventoryWindow)windows.Last()).ShowChest(chest);
     }
     internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));
@@ -100,16 +103,44 @@ internal sealed class WindowManager
 
     internal bool IsMinimized(string id) => windows.Any(window => window.Id == id && window.IsMinimized);
 
+    internal void OpenLookup(object subject)
+    {
+        if (windows.FirstOrDefault(window => window.Id == LookupWindow.WindowId && !window.IsValid) is { } stale)
+        {
+            windows.Remove(stale);
+            stale.Close();
+        }
+        Open(LookupWindow.WindowId, () => new LookupWindow(lookupAnything));
+        ((LookupWindow)windows.Last()).ShowPage(subject);
+    }
+
+    internal ContextMenuItem[] GetMinimizedWindowItems() => windows.Where(window => window.IsValid && window.IsMinimized)
+        .Select(window => new ContextMenuItem($"Restore {window.Title}", () =>
+        {
+            if (window.IsValid)
+                Open(window.Id, () => window);
+        })).ToArray();
+
+    internal void CloseAll()
+    {
+        InvalidateLayout();
+        foreach (OsWindow window in windows)
+            window.Close();
+        windows.Clear();
+    }
+
     internal bool IsContextMenuOpen => contextMenu.IsOpen;
 
     internal void CloseContextMenu() => contextMenu.Close();
 
-    internal bool ShowContextMenu(Point cursor, ContextMenuItem[] items, string? title = null, Func<bool>? isValid = null)
+    internal bool ShowContextMenu(Point cursor, ContextMenuItem[] items, string? title = null, Func<bool>? isValid = null,
+        ContextMenuInfo? info = null)
     {
         CancelPendingTransfer();
         EndDrag();
         ClearKeyboardFocus();
-        return contextMenu.Open(cursor, items, config, title, isValid);
+        return contextMenu.Open(cursor, ContextMenuItems.WithInfo(items, lookupAnything.Available ? info : null, OpenLookup),
+            config, title, isValid);
     }
 
     internal bool ReceiveClick(Point cursor, bool leftClick, IInputHelper input)
@@ -133,6 +164,7 @@ internal sealed class WindowManager
             {
                 RememberPlacement(window);
                 windows.Remove(window);
+                window.Close();
                 focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
                 EndDrag();
             }
@@ -183,7 +215,10 @@ internal sealed class WindowManager
         {
             ContextMenuItem[]? items = window.GetContextMenuItems(cursor);
             if (items != null)
-                ShowContextMenu(cursor, items);
+            {
+                ContextMenuInfo? info = window.GetContextMenuInfo(cursor);
+                ShowContextMenu(cursor, items, isValid: info?.IsValid, info: info);
+            }
             else
                 window.ReceiveContentClick(cursor, leftClick: false);
         }
@@ -217,12 +252,15 @@ internal sealed class WindowManager
 
     internal void Update(IInputHelper input)
     {
+        foreach (OsWindow window in windows.ToArray())
+            window.Update();
         foreach (OsWindow window in windows.Where(window => !window.IsValid).ToArray())
         {
             CancelPendingTransfer();
             EndDrag();
             RememberPlacement(window);
             windows.Remove(window);
+            window.Close();
             if (ReferenceEquals(focusedWindow, window))
                 focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
         }
@@ -453,7 +491,8 @@ internal sealed class WindowManager
             int left = Pelicom.StripWidth + margin;
             Rectangle workArea = new(left, margin, Math.Max(0, drawnViewport.X - left - margin), Math.Max(0, drawnViewport.Y - margin * 2));
             float titleTextHeight = windows.Count == 0 ? Game1.smallFont.LineSpacing
-                : windows.Max(window => Game1.smallFont.MeasureString(window.Title).Y);
+                : windows.Max(window => Math.Max(Game1.smallFont.MeasureString(window.Title).Y,
+                    Game1.smallFont.MeasureString(window.TitleSubtext).Y));
             int titleHeight = Math.Max(27, (int)MathF.Ceiling(titleTextHeight * config.FontScale)) + 6;
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             foreach (OsWindow window in windows)
@@ -533,6 +572,11 @@ internal sealed class WindowManager
             contextMenu.Close();
             return true;
         }
+        if (CanReceiveInput && !contextMenu.IsOpen && Game1.game1.HasKeyboardFocus()
+            && focusedWindow is { IsValid: true, IsMinimized: false } focused
+            && drawnWindows.Contains(focused) && windows.LastOrDefault(window => !window.IsMinimized) == focused
+            && focused.ReceiveShortcut(button))
+            return true;
         if (!RefreshKeyboardFocus() || !Game1.game1.HasKeyboardFocus() || !button.TryGetKeyboard(out Keys key))
             return false;
         if (key is Keys.Escape or Keys.Tab)

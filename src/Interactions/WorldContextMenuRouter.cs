@@ -9,12 +9,17 @@ namespace AgrariaOS.Interactions;
 // Native callers supply their complete, localized choices and original continuation before
 // creating a modal dialogue. Providers only decide which shortcuts to expose.
 internal sealed record WorldMenuRequest(GameLocation Location, object Target,
-    IReadOnlyList<Response> Choices, Action<Response> Choose);
+    IReadOnlyList<Response> Choices, Action<Response> Choose, Vector2? LookupTile = null);
+
+internal sealed record WorldMenuTarget(GameLocation Location, object? Entity, Vector2 Tile);
 
 internal sealed record WorldMenu(ContextMenuItem[] Items, Func<bool> IsValid);
 
 internal interface IWorldContextMenuProvider
 {
+    // Claim the target before generic actions are offered. Vanilla still resolves reach,
+    // eligibility and the localized choices; claiming a target never executes its action.
+    bool OwnsTarget(WorldMenuTarget target);
     WorldMenu? Create(WorldMenuRequest request);
 }
 
@@ -32,6 +37,8 @@ internal sealed class WorldContextMenuRouter
     // Add providers here without changing popup rendering or input ownership.
     internal void Register(IWorldContextMenuProvider provider) => providers.Add(provider);
 
+    internal bool OwnsTarget(WorldMenuTarget target) => providers.Any(provider => provider.OwnsTarget(target));
+
     internal WorldMenu? Create(WorldMenuRequest request)
     {
         foreach (IWorldContextMenuProvider provider in providers)
@@ -45,6 +52,8 @@ internal sealed class WorldContextMenuRouter
 
 internal sealed class TelevisionContextMenuProvider : IWorldContextMenuProvider
 {
+    public bool OwnsTarget(WorldMenuTarget target) => target.Entity is TV;
+
     public WorldMenu? Create(WorldMenuRequest request)
     {
         if (request.Target is not TV tv)
@@ -57,6 +66,8 @@ internal sealed class TelevisionContextMenuProvider : IWorldContextMenuProvider
 
 internal sealed class TelephoneContextMenuProvider : IWorldContextMenuProvider
 {
+    public bool OwnsTarget(WorldMenuTarget target) => target.Entity is Phone;
+
     public WorldMenu? Create(WorldMenuRequest request)
     {
         if (request.Target is not Phone phone)
@@ -84,6 +95,9 @@ internal sealed class TelephoneContextMenuProvider : IWorldContextMenuProvider
 
 internal sealed class BusTicketContextMenuProvider : IWorldContextMenuProvider
 {
+    public bool OwnsTarget(WorldMenuTarget target) => target.Location is BusStop bus
+        && bus.getTileIndexAt((int)target.Tile.X, (int)target.Tile.Y, "Buildings", "outdoors") == 1057;
+
     internal static bool HasDriver(BusStop bus)
     {
         // Vanilla requires Pam at this exact driving spot, not merely somewhere on the map.

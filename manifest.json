@@ -5,5 +5,8 @@
   "Description": "A compact StardEVE HUD, flat toolbar, Pelicom taskstrip and desktop windows.",
   "UniqueID": "Toz.AgrariaOS",
   "EntryDll": "AgrariaOS.dll",
-  "MinimumApiVersion": "4.4.0"
+  "MinimumApiVersion": "4.4.0",
+  "Dependencies": [
+    { "UniqueID": "Pathoschild.LookupAnything", "IsRequired": false }
+  ]
 }

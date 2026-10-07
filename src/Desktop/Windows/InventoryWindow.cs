@@ -1,6 +1,7 @@
 using AgrariaOS.Configuration;
 using AgrariaOS.UI;
 using AgrariaOS.Interactions;
+using AgrariaOS.Integration;
 using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -15,29 +16,12 @@ internal sealed class InventoryWindow : OsWindow
 {
     internal const string WindowId = "Inventory";
     internal const string ChestWindowId = "ChestInventory";
-    private const int Padding = 4;
+    private const int Padding = GridView<Item>.Padding;
     private const int IconSize = 20;
-    private const int ScrollbarWidth = 10;
-    private static readonly string[] Headings = { "Name", "Qty", "Category", "Value" };
-    private static readonly int[] MinimumWidths = { 44, 28, 36, 36 };
     private readonly ModConfig config;
-    private readonly int[] preferredWidths = { 264, 52, 160, 100 };
-    private readonly int[] columnWidths = new int[4];
-    private readonly Rectangle[] headers = new Rectangle[4];
-    private readonly List<Item> items = new();
-    private readonly List<Rectangle> itemRowBounds = new();
-    private Rectangle rowsBounds;
-    private Rectangle scrollTrack;
-    private Rectangle scrollThumb;
-    private int visibleRows;
-    private int firstRow;
-    private int resizingColumn = -1;
-    private int resizeStartX;
-    private int resizeLeftWidth;
-    private int resizeRightWidth;
-    private int? scrollDragOffset;
-    private SpriteFont? measuredFont;
-    private int glyphHeight;
+    private readonly LookupAnythingIntegration? lookupAnything;
+    private readonly GridView<Item> grid;
+    private bool knowsPrices;
     private Chest? chest;
     private GameLocation? chestLocation;
     private Farmer? chestFarmer;
@@ -46,12 +30,24 @@ internal sealed class InventoryWindow : OsWindow
 
     internal Chest? Chest => chest;
     internal string? TransferStatus { get; set; }
-    internal bool ContainsDropPoint(Point cursor) => rowsBounds.Contains(cursor);
-    internal Item[] SelectedItems => selection.InSlotOrder(items);
+    internal bool ContainsDropPoint(Point cursor) => grid.RowsBounds.Contains(cursor);
+    internal Item[] SelectedItems => selection.InSlotOrder((chest?.GetItemsForPlayer() ?? Game1.player.Items)
+        .Where(item => item != null).ToArray());
 
-    internal InventoryWindow(ModConfig config, Chest? chest = null)
+    internal InventoryWindow(ModConfig config, Chest? chest = null,
+        LookupAnythingIntegration? lookupAnything = null)
     {
         this.config = config;
+        this.lookupAnything = lookupAnything;
+        grid = new GridView<Item>(
+            GridColumn<Item>.Create("Name", 264, 44, item => item.DisplayName, item => item.DisplayName,
+                comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell),
+            GridColumn<Item>.Create("Qty", 52, 28, item => item.Stack.ToString(CultureInfo.InvariantCulture),
+                item => item.Stack, rightAligned: true),
+            GridColumn<Item>.Create("Category", 160, 36, item => item.getCategoryName(), item => item.getCategoryName(),
+                textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase),
+            GridColumn<Item>.Create("Value", 100, 36, item => GetValueText(item, knowsPrices),
+                item => GetValue(item, knowsPrices), rightAligned: true));
         if (chest != null)
             ShowChest(chest);
     }
@@ -61,9 +57,7 @@ internal sealed class InventoryWindow : OsWindow
         if (ReferenceEquals(chest, target) && IsValid)
             return;
         EndContentDrag();
-        firstRow = 0;
-        items.Clear();
-        itemRowBounds.Clear();
+        grid.Clear();
         selection.Clear();
         TransferStatus = null;
         chest = target;
@@ -74,6 +68,8 @@ internal sealed class InventoryWindow : OsWindow
 
     internal override string Id => chest == null ? WindowId : ChestWindowId;
     internal override string Title => chest == null ? "Inventory" : $"{chest.DisplayName} Inventory";
+    internal override string TitleSubtext
+        => $"{(chest?.GetItemsForPlayer() ?? Game1.player.Items).Count(item => item != null)}/{chest?.GetActualCapacity() ?? Game1.player.MaxItems}";
     internal override bool IsValid => chest == null || (Context.IsWorldReady
         && Game1.player == chestFarmer && Game1.currentLocation == chestLocation
         && Game1.stats.DaysPlayed == chestDay
@@ -81,133 +77,43 @@ internal sealed class InventoryWindow : OsWindow
         && ReferenceEquals(placed, chest));
     internal override int Icon => UiStyle.InventoryIcon;
     internal override Point DefaultSize => new(600, 420);
-    private int MaxFirstRow => Math.Max(0, items.Count - visibleRows);
 
     protected override Point GetMinimumSize(ModConfig config)
-        => new(320, TitleHeight + 2 + Padding * 2 + GetRowHeight(Game1.smallFont, config.FontScale) * 3 + 1);
+        => new(320, TitleHeight + 2 + Padding * 2 + grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding) * 3 + 1);
 
     protected override void DrawContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config)
     {
         // Rendering only reads the source; transfers run under the chest mutex.
-        items.Clear();
-        itemRowBounds.Clear();
-        foreach (Item? item in chest?.GetItemsForPlayer() ?? Game1.player.Items)
-        {
-            if (item != null)
-                items.Add(item);
-        }
-        selection.Refresh(items);
-
-        int rowHeight = GetRowHeight(Game1.smallFont, config.FontScale);
-        if (contentBounds.Height < rowHeight * 3 + Padding * 2 + 1)
-        {
-            Array.Clear(headers);
-            rowsBounds = scrollTrack = scrollThumb = Rectangle.Empty;
-            visibleRows = 0;
-            EndContentDrag();
-            DrawCellText(batch, "Not enough space.", contentBounds, UiStyle.Muted, config);
-            return;
-        }
-        int tableWidth = Math.Max(0, contentBounds.Width - Padding * 2 - ScrollbarWidth);
-        FitColumns(tableWidth);
-        int x = contentBounds.X + Padding;
-        for (int i = 0; i < headers.Length; i++)
-        {
-            headers[i] = new Rectangle(x, contentBounds.Y + Padding, columnWidths[i], rowHeight);
-            x += columnWidths[i];
-        }
-
-        int availableHeight = Math.Max(0, contentBounds.Height - Padding * 2 - rowHeight * 2 - 1);
-        visibleRows = availableHeight / rowHeight;
-        firstRow = Math.Clamp(firstRow, 0, MaxFirstRow);
-        rowsBounds = new Rectangle(headers[0].X, headers[0].Bottom + 1, tableWidth, availableHeight);
-        scrollTrack = new Rectangle(rowsBounds.Right + 2, rowsBounds.Y, ScrollbarWidth - 4, rowsBounds.Height);
-        scrollThumb = Rectangle.Empty;
-        if (MaxFirstRow > 0 && rowsBounds.Height > 0)
-        {
-            int thumbHeight = Math.Min(scrollTrack.Height, Math.Max(16, scrollTrack.Height * visibleRows / items.Count));
-            int thumbY = scrollTrack.Y + (int)Math.Round((scrollTrack.Height - thumbHeight) * (double)firstRow / MaxFirstRow);
-            scrollThumb = new Rectangle(scrollTrack.X, thumbY, scrollTrack.Width, thumbHeight);
-        }
-
+        knowsPrices = Game1.player.stats.Get("Book_PriceCatalogue") != 0;
+        grid.SetRows((chest?.GetItemsForPlayer() ?? Game1.player.Items).Where(item => item != null));
+        selection.Refresh(grid.Rows);
+        string? footer = TransferStatus ?? (selection.Count > 0 ? $"{selection.Count} selected" : null);
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-        foreach (Rectangle header in headers)
-            batch.Draw(Game1.staminaRect, header, UiStyle.Border * (config.Opacity * 0.45f));
-        for (int i = 0; i < headers.Length; i++)
-        {
-            DrawCellText(batch, Headings[i], headers[i], UiStyle.Primary, config, rightAligned: i is 1 or 3);
-            if (i < headers.Length - 1)
-            {
-                Rectangle divider = new(headers[i].Right - 1, headers[i].Y, 1, rowHeight + 1 + rowsBounds.Height);
-                batch.Draw(Game1.staminaRect, divider, UiStyle.Border * config.Opacity);
-                if (resizingColumn == i || DividerBounds(i).Contains(cursor))
-                    batch.Draw(Game1.staminaRect, new Rectangle(divider.X, divider.Y, 2, rowHeight), UiStyle.Primary * config.Opacity);
-            }
-        }
-        batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Y - 1, tableWidth, 1), UiStyle.Border * config.Opacity);
-
-        bool knowsPrices = Game1.player.stats.Get("Book_PriceCatalogue") != 0;
-        int endRow = Math.Min(items.Count, firstRow + visibleRows);
-        for (int i = firstRow; i < endRow; i++)
-        {
-            Item item = items[i];
-            Rectangle row = new(rowsBounds.X, rowsBounds.Y + (i - firstRow) * rowHeight, tableWidth, rowHeight);
-            itemRowBounds.Add(row);
-            if (selection.Contains(item))
-                batch.Draw(Game1.staminaRect, row, new Color(54, 101, 129) * config.Opacity);
-            else if (row.Contains(cursor))
-                batch.Draw(Game1.staminaRect, row, UiStyle.Border * (config.Opacity * 0.55f));
-            else if ((i & 1) != 0)
-                batch.Draw(Game1.staminaRect, row, Color.White * (config.Opacity * 0.025f));
-
-            Rectangle name = new(headers[0].X, row.Y, headers[0].Width, row.Height);
-            DrawItemIcon(batch, item, new Rectangle(name.X + Padding, row.Y + (row.Height - IconSize) / 2, IconSize, IconSize), config.Opacity);
-            name.X += IconSize + Padding;
-            name.Width -= IconSize + Padding;
-            DrawCellText(batch, item.DisplayName, name, UiStyle.Primary, config);
-            DrawCellText(batch, item.Stack.ToString(CultureInfo.InvariantCulture), CellBounds(1, row), UiStyle.Primary, config, rightAligned: true);
-            DrawCellText(batch, item.getCategoryName(), CellBounds(2, row), UiStyle.Muted, config);
-            DrawCellText(batch, GetValueText(item, knowsPrices), CellBounds(3, row), UiStyle.Primary, config, rightAligned: true);
-        }
-
-        if (items.Count == 0)
-            DrawCenteredText(batch, chest == null ? "Backpack empty." : "Chest empty.", rowsBounds, UiStyle.Muted, config);
-        if (!scrollThumb.IsEmpty)
-        {
-            batch.Draw(Game1.staminaRect, scrollTrack, UiStyle.Border * (config.Opacity * 0.45f));
-            batch.Draw(Game1.staminaRect, scrollThumb, UiStyle.Muted * config.Opacity);
-        }
-
-        Rectangle footer = new(rowsBounds.X, contentBounds.Bottom - Padding - rowHeight, tableWidth, rowHeight);
-        string summary = $"{items.Count} / {chest?.GetActualCapacity() ?? Game1.player.MaxItems} slots";
-        if (selection.Count > 0)
-            summary += $"   |   {selection.Count} selected";
-        if (MaxFirstRow > 0 && visibleRows > 0)
-            summary += $"   |   {firstRow + 1}-{endRow} of {items.Count}";
-        if (TransferStatus != null)
-            summary = TransferStatus;
-        DrawCellText(batch, summary, footer, UiStyle.Muted, config);
+        grid.Draw(batch, contentBounds, grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding),
+            config, cursor, chest == null ? "Backpack empty." : "Chest empty.", selection.Contains,
+            footer, showRange: TransferStatus == null);
     }
 
     internal Item? SelectRow(Point cursor, bool control, bool shift)
     {
-        int row = itemRowBounds.FindIndex(bounds => bounds.Contains(cursor));
-        if (row < 0 || firstRow + row >= items.Count)
+        Item? item = grid.GetRow(cursor);
+        if (item == null)
         {
-            if (rowsBounds.Contains(cursor) && !control && !shift)
+            if (grid.RowsBounds.Contains(cursor) && !control && !shift)
             {
                 selection.Clear();
                 TransferStatus = null;
             }
             return null;
         }
-        Item item = items[firstRow + row];
         // Ignore stale rows whose stack was removed since the last render.
         var liveItems = (chest?.GetItemsForPlayer() ?? Game1.player.Items)
             .Where(current => current != null).ToArray();
         if (!liveItems.Any(current => ReferenceEquals(current, item)))
             return null;
-        selection.Click(item, liveItems, control, shift);
+        // Shift ranges follow the visible sort, excluding stacks removed since render.
+        Item[] displayedItems = grid.Rows.Where(displayed => liveItems.Any(current => ReferenceEquals(current, displayed))).ToArray();
+        selection.Click(item, displayedItems, control, shift);
         TransferStatus = null;
         return selection.Contains(item) ? item : null;
     }
@@ -229,7 +135,7 @@ internal sealed class InventoryWindow : OsWindow
         string label = $"{count} stack{(count == 1 ? "" : "s")}";
         int width = (int)MathF.Ceiling(Game1.smallFont.MeasureString(label).X * config.FontScale) + IconSize + Padding * 4 + 1;
         Rectangle badge = new(cursor.X + 16, cursor.Y + 16, Math.Min(width, Game1.uiViewport.Width),
-            GetRowHeight(Game1.smallFont, config.FontScale) + Padding * 2);
+            grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding) + Padding * 2);
         badge.X = Math.Clamp(badge.X, 0, Math.Max(0, Game1.uiViewport.Width - badge.Width));
         badge.Y = Math.Clamp(badge.Y, 0, Math.Max(0, Game1.uiViewport.Height - badge.Height));
         batch.Draw(Game1.staminaRect, badge, UiStyle.Background * config.Opacity);
@@ -237,12 +143,13 @@ internal sealed class InventoryWindow : OsWindow
         DrawItemIcon(batch, draggedItems[0], new Rectangle(badge.X + Padding,
             badge.Y + (badge.Height - IconSize) / 2, IconSize, IconSize), config.Opacity);
         Rectangle textBounds = new(badge.X + IconSize + Padding, badge.Y, badge.Width - IconSize - Padding, badge.Height);
-        DrawCellText(batch, label, textBounds,
+        UiText.DrawCell(batch, label, textBounds,
             validDrop ? new Color(137, 221, 151) : UiStyle.Muted, config);
     }
 
     internal void DrawDropTarget(SpriteBatch batch, ModConfig config)
     {
+        Rectangle rowsBounds = grid.RowsBounds;
         Color color = new Color(137, 221, 151) * config.Opacity;
         batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Y, rowsBounds.Width, 1), color);
         batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Bottom - 1, rowsBounds.Width, 1), color);
@@ -250,20 +157,18 @@ internal sealed class InventoryWindow : OsWindow
 
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
     {
-        int row = itemRowBounds.FindIndex(bounds => bounds.Contains(cursor));
-        if (chest != null || row < 0 || firstRow + row >= items.Count)
+        Item? item = grid.GetRow(cursor);
+        if (item == null)
             return null;
-        Item item = items[firstRow + row];
         Farmer farmer = Game1.player;
-        GameLocation location = Game1.currentLocation;
-        uint day = Game1.stats.DaysPlayed;
-        bool IsCurrent() => Context.IsWorldReady && Game1.player == farmer
-            && Game1.currentLocation == location && Game1.stats.DaysPlayed == day
-            && IsValid && !IsMinimized && InventoryTransferBatch.IndexOf(farmer.Items, item) >= 0;
+        Func<bool> IsCurrent = GetContextItemGuard(item);
         if (!IsCurrent())
             return null;
+        var entries = new List<ContextMenuItem>();
+        if (chest != null)
+            return lookupAnything?.Available == true ? Array.Empty<ContextMenuItem>() : null;
         Item[] targets = selection.ContextTargets(item, farmer.Items.Where(current => current != null).ToArray());
-        return new ContextMenuItem[]
+        entries.AddRange(new ContextMenuItem[]
         {
             new("Split", () =>
             {
@@ -303,127 +208,58 @@ internal sealed class InventoryWindow : OsWindow
                 selection.Refresh(farmer.Items.Where(current => current != null).ToArray());
                 TransferStatus = null;
             }, IsEnabled: targets.All(target => target.canBeTrashed()))
-        };
+        });
+        return entries.ToArray();
     }
 
-    internal override void ReceiveContentClick(Point cursor, bool leftClick)
+    internal override ContextMenuInfo? GetContextMenuInfo(Point cursor)
     {
-        if (!leftClick)
-            return;
-
-        for (int i = 0; i < headers.Length - 1; i++)
-        {
-            if (!DividerBounds(i).Contains(cursor))
-                continue;
-            Array.Copy(columnWidths, preferredWidths, columnWidths.Length);
-            resizingColumn = i;
-            resizeStartX = cursor.X;
-            resizeLeftWidth = columnWidths[i];
-            resizeRightWidth = columnWidths[i + 1];
-            return;
-        }
-
-        if (!scrollThumb.IsEmpty && scrollTrack.Contains(cursor))
-        {
-            scrollDragOffset = scrollThumb.Contains(cursor) ? cursor.Y - scrollThumb.Y : scrollThumb.Height / 2;
-            DragContent(cursor);
-        }
+        if (lookupAnything?.Available != true || grid.GetRow(cursor) is not { } item)
+            return null;
+        Func<bool> isCurrent = GetContextItemGuard(item);
+        return new ContextMenuInfo(() => lookupAnything.GetInventorySubject(item),
+            () => isCurrent() && Context.IsPlayerFree);
     }
 
-    internal override void DragContent(Point cursor)
+    private Func<bool> GetContextItemGuard(Item item)
     {
-        if (resizingColumn >= 0)
-        {
-            // A divider shares width between its neighbors. Column order and table width stay fixed.
-            int delta = Math.Clamp(cursor.X - resizeStartX,
-                GetMinimumWidth(resizingColumn, rowsBounds.Width) - resizeLeftWidth,
-                resizeRightWidth - GetMinimumWidth(resizingColumn + 1, rowsBounds.Width));
-            preferredWidths[resizingColumn] = resizeLeftWidth + delta;
-            preferredWidths[resizingColumn + 1] = resizeRightWidth - delta;
-        }
-        else if (scrollDragOffset.HasValue && scrollTrack.Height > scrollThumb.Height)
-        {
-            double fraction = (double)(cursor.Y - scrollDragOffset.Value - scrollTrack.Y) / (scrollTrack.Height - scrollThumb.Height);
-            firstRow = (int)Math.Round(Math.Clamp(fraction, 0, 1) * MaxFirstRow);
-        }
+        Farmer farmer = Game1.player;
+        GameLocation location = Game1.currentLocation;
+        uint day = Game1.stats.DaysPlayed;
+        return () => Context.IsWorldReady && Game1.player == farmer
+            && Game1.currentLocation == location && Game1.stats.DaysPlayed == day
+            && IsValid && !IsMinimized
+            && (chest?.GetItemsForPlayer() ?? farmer.Items).Any(current => ReferenceEquals(current, item));
     }
 
-    internal override void EndContentDrag()
+    internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
+    internal override void DragContent(Point cursor) => grid.Drag(cursor);
+    internal override void EndContentDrag() => grid.EndDrag();
+    internal override void ReceiveScroll(int delta) => grid.ReceiveScroll(delta);
+
+    private static void DrawNameCell(SpriteBatch batch, Item item, Rectangle bounds, ModConfig config)
     {
-        resizingColumn = -1;
-        scrollDragOffset = null;
+        DrawItemIcon(batch, item, new Rectangle(bounds.X + Padding,
+            bounds.Y + (bounds.Height - IconSize) / 2, IconSize, IconSize), config.Opacity);
+        bounds.X += IconSize + Padding;
+        bounds.Width -= IconSize + Padding;
+        UiText.DrawCell(batch, item.DisplayName, bounds, UiStyle.Primary, config);
     }
 
-    internal override void ReceiveScroll(int delta)
-    {
-        if (delta != 0)
-            firstRow = (int)Math.Clamp((long)firstRow - Math.Sign(delta) * Math.Max(1L, Math.Abs((long)delta) / 120), 0, MaxFirstRow);
-    }
-
-    private Rectangle CellBounds(int column, Rectangle row) => new(headers[column].X, row.Y, headers[column].Width, row.Height);
-    private Rectangle DividerBounds(int column) => new(headers[column].Right - 3, headers[column].Y, 7, headers[column].Height);
-    private static int GetMinimumWidth(int column, int tableWidth) => Math.Min(MinimumWidths[column], tableWidth / 4);
-
-    private int GetRowHeight(SpriteFont font, float scale)
-    {
-        if (!ReferenceEquals(measuredFont, font))
-        {
-            measuredFont = font;
-            glyphHeight = 0;
-            foreach (SpriteFont.Glyph glyph in font.Glyphs)
-                glyphHeight = Math.Max(glyphHeight, glyph.Cropping.Height);
-        }
-        // Stardew reduces LineSpacing below some glyph heights. MeasureString still
-        // includes those heights, so reserve them plus the one-pixel text shadow.
-        return Math.Max(IconSize + Padding, (int)MathF.Ceiling(Math.Max(font.LineSpacing, glyphHeight) * scale) + 2);
-    }
-
-    private void FitColumns(int width)
-    {
-        int minimumTotal = 0;
-        int weightTotal = 0;
-        for (int i = 0; i < columnWidths.Length; i++)
-        {
-            columnWidths[i] = GetMinimumWidth(i, width);
-            minimumTotal += columnWidths[i];
-            weightTotal += Math.Max(0, preferredWidths[i] - columnWidths[i]);
-        }
-
-        int used = 0;
-        for (int i = 0; i < columnWidths.Length; i++)
-        {
-            int weight = Math.Max(0, preferredWidths[i] - columnWidths[i]);
-            columnWidths[i] += weightTotal == 0 ? (width - minimumTotal) / columnWidths.Length
-                : (int)((long)(width - minimumTotal) * weight / weightTotal);
-            used += columnWidths[i];
-        }
-        columnWidths[0] += width - used;
-    }
-
-    private static string GetValueText(Item item, bool knowsPrices)
+    private static long? GetValue(Item item, bool knowsPrices)
     {
         // Stardew 1.6.15 IClickableMenu.drawHoverText's Price Catalogue branch.
         if (!knowsPrices || item is Furniture or Clothing or Wallpaper || !item.CanBeLostOnDeath()
             || (item is StardewValley.Object obj && obj.bigCraftable.Value))
-            return "";
+            return null;
 
         int unitPrice = item.sellToStorePrice(-1L);
         long value = (long)unitPrice * item.Stack;
-        return unitPrice > 0 && value > 0 ? value.ToString("N0", CultureInfo.InvariantCulture) + " g" : "";
+        return unitPrice > 0 && value > 0 ? value : null;
     }
 
-    private static void DrawCellText(SpriteBatch batch, string text, Rectangle cell, Color color, ModConfig config, bool rightAligned = false)
-    {
-        int width = cell.Width - Padding * 2 - 1; // Reserve the shadow and divider pixel too.
-        if (width <= 0 || string.IsNullOrEmpty(text))
-            return;
-        string fitted = UiText.Fit(text, width, config.FontScale);
-        Vector2 size = Game1.smallFont.MeasureString(fitted) * config.FontScale;
-        if (size.Y + 1 > cell.Height)
-            return;
-        float x = rightAligned ? cell.Right - Padding - 1 - size.X : cell.X + Padding;
-        UiText.Draw(batch, fitted, new Vector2(x, cell.Y + (cell.Height - size.Y) / 2), color, config);
-    }
+    private static string GetValueText(Item item, bool knowsPrices)
+        => GetValue(item, knowsPrices) is { } value ? value.ToString("N0", CultureInfo.InvariantCulture) + " g" : "";
 
     private static void DrawItemIcon(SpriteBatch batch, Item item, Rectangle bounds, float opacity)
     {

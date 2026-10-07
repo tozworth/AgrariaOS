@@ -45,6 +45,7 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Action openChat;
     private readonly Func<bool> isChatMinimized;
     private readonly Action<Point, ContextMenuItem[]> showContextMenu;
+    private readonly Func<ContextMenuItem[]> minimizedWindows;
     private bool autoHideChecked;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
@@ -52,7 +53,8 @@ internal sealed class Pelicom : IClickableMenu
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
         Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized,
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
-        Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu)
+        Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
+        Func<ContextMenuItem[]> minimizedWindows)
     {
         this.config = config;
         this.isEnabled = isEnabled;
@@ -67,6 +69,7 @@ internal sealed class Pelicom : IClickableMenu
         this.openChat = openChat;
         this.isChatMinimized = isChatMinimized;
         this.showContextMenu = showContextMenu;
+        this.minimizedWindows = minimizedWindows;
     }
 
     internal bool IsVisible => isEnabled() && Game1.IsHudDrawn && !Game1.eventUp && Game1.farmEvent == null
@@ -96,7 +99,7 @@ internal sealed class Pelicom : IClickableMenu
             showContextMenu(new Point(x, y), new[]
             {
                 new ContextMenuItem("Auto-hide", () => autoHideChecked = !autoHideChecked, autoHideChecked)
-            });
+            }.Concat(minimizedWindows()).ToArray());
     }
     public override bool isWithinBounds(int x, int y) => IsInteractive && drawnBounds.Contains(x, y);
 

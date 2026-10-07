@@ -5,6 +5,7 @@ using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Hud;
 using AgrariaOS.Notifications;
 using AgrariaOS.UI;
+using AgrariaOS.Integration;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -34,10 +35,12 @@ public sealed partial class ModEntry : Mod
         () => Instance.notificationHistory.Value.UnreadCount,
         () => Instance.windowManager.Value.OpenChat(Instance.chatHistory.Value),
         () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId),
-        (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items)));
+        (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items),
+        () => Instance.windowManager.Value.GetMinimizedWindowItems()));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
-        () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed));
+        () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything));
+    private LookupAnythingIntegration lookupAnything = null!;
     private ModConfig config = null!;
     private bool patchInstalled;
     private bool toolbarPatchInstalled;
@@ -50,6 +53,10 @@ public sealed partial class ModEntry : Mod
         config = helper.ReadConfig<ModConfig>();
         config.Normalize();
         helper.WriteConfig(config);
+        lookupAnything = new LookupAnythingIntegration(helper, Monitor, ModManifest.UniqueID);
+        try { lookupAnything.Prepare(); }
+        catch (Exception ex) { lookupAnything.Disable(ex); }
+        helper.Events.GameLoop.GameLaunched += (_, _) => InitializeLookupAnything();
 
         InstallHudPatches();
         InstallWorldInteractionPatches();
@@ -94,7 +101,7 @@ public sealed partial class ModEntry : Mod
         {
             foreach (var screen in windowManager.GetActiveValues())
             {
-                screen.Value.InvalidateLayout();
+                screen.Value.CloseAll();
             }
             osHudActive.ResetAllScreens();
             statusReadoutRenderer.ResetAllScreens();
@@ -108,6 +115,7 @@ public sealed partial class ModEntry : Mod
             rightClickAction.ResetAllScreens();
             telephoneTarget.ResetAllScreens();
             worldInteractionsFailed.ResetAllScreens();
+            lookupReplay.ResetAllScreens();
         };
     }
 

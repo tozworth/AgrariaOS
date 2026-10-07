@@ -7,6 +7,20 @@ namespace AgrariaOS.UI;
 
 internal static class UiText
 {
+    internal static void DrawCell(SpriteBatch batch, string text, Rectangle cell, Color color, ModConfig config,
+        bool rightAligned = false, int padding = 4)
+    {
+        int width = cell.Width - padding * 2 - 1; // Reserve the shadow and divider pixel too.
+        if (width <= 0 || string.IsNullOrEmpty(text))
+            return;
+        string fitted = Fit(text, width, config.FontScale);
+        Vector2 size = Game1.smallFont.MeasureString(fitted) * config.FontScale;
+        if (size.Y + 1 > cell.Height)
+            return;
+        float x = rightAligned ? cell.Right - padding - 1 - size.X : cell.X + padding;
+        Draw(batch, fitted, new Vector2(x, cell.Y + (cell.Height - size.Y) / 2), color, config);
+    }
+
     internal static string Fit(string text, int width, float scale)
     {
         if (width <= 0 || string.IsNullOrEmpty(text))

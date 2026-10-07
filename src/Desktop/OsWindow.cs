@@ -24,9 +24,13 @@ internal abstract class OsWindow
     private const int ResizeGrip = 12;
     internal abstract string Id { get; }
     internal abstract string Title { get; }
+    internal virtual string TitleSubtext => "";
     internal abstract int Icon { get; }
     internal virtual bool IsValid => true;
+    internal virtual bool CanResize => true;
+    internal virtual ContextMenuInfo? GetContextMenuInfo(Point cursor) => null;
     internal virtual Point DefaultSize => new(420, 260);
+    protected virtual bool DrawContentBackground => true;
     internal bool IsMinimized { get; set; }
     internal Rectangle Bounds { get; private set; }
     internal int TitleHeight { get; private set; }
@@ -54,7 +58,7 @@ internal abstract class OsWindow
         Point contentMinimum = GetMinimumSize(config);
         minimumSize = new Point(Math.Min(Math.Max(contentMinimum.X, titleHeight * 4), workArea.Width),
             Math.Min(Math.Max(contentMinimum.Y, titleHeight + 40), workArea.Height));
-        Point desiredSize = size ?? DefaultSize;
+        Point desiredSize = CanResize ? size ?? DefaultSize : DefaultSize;
         int width = Math.Clamp(desiredSize.X, minimumSize.X, workArea.Width);
         int height = Math.Clamp(desiredSize.Y, minimumSize.Y, workArea.Height);
         Point origin = position ?? new Point(workArea.X + (workArea.Width - width) / 2, workArea.Y + (workArea.Height - height) / 2);
@@ -67,7 +71,8 @@ internal abstract class OsWindow
     internal void RestorePlacement(WindowPlacement placement)
     {
         position = new Point(placement.X, placement.Y);
-        size = new Point(placement.Width, placement.Height);
+        if (CanResize)
+            size = new Point(placement.Width, placement.Height);
     }
 
     internal WindowPlacement? GetPlacement()
@@ -88,7 +93,7 @@ internal abstract class OsWindow
 
     internal WindowResizeEdges GetResizeEdges(Point cursor)
     {
-        if (!Bounds.Contains(cursor) || CloseBounds.Contains(cursor) || MinimizeBounds.Contains(cursor))
+        if (!CanResize || !Bounds.Contains(cursor) || CloseBounds.Contains(cursor) || MinimizeBounds.Contains(cursor))
             return WindowResizeEdges.None;
         if (cursor.X >= Bounds.Right - ResizeGrip && cursor.Y >= Bounds.Bottom - ResizeGrip)
             return WindowResizeEdges.Right | WindowResizeEdges.Bottom;
@@ -103,6 +108,8 @@ internal abstract class OsWindow
 
     internal void ResizeFrom(Rectangle startBounds, Point delta, WindowResizeEdges edges)
     {
+        if (!CanResize)
+            return;
         int left = startBounds.Left;
         int right = startBounds.Right;
         int top = startBounds.Top;
@@ -128,10 +135,14 @@ internal abstract class OsWindow
     internal virtual void ReceiveScroll(int delta) { }
     internal virtual IKeyboardSubscriber? KeyboardSubscriber => null;
     internal virtual void ReceiveKey(Keys key) { }
+    internal virtual bool ReceiveShortcut(StardewModdingAPI.SButton button) => false;
+    internal virtual void Update() { }
+    internal virtual void Close() { }
 
     internal void Draw(SpriteBatch batch, ModConfig config, Point cursor)
     {
-        batch.Draw(Game1.staminaRect, Bounds, UiStyle.Background * config.Opacity);
+        Rectangle background = DrawContentBackground ? Bounds : new Rectangle(Bounds.X, Bounds.Y, Bounds.Width, TitleHeight + 1);
+        batch.Draw(Game1.staminaRect, background, UiStyle.Background * config.Opacity);
         UiStyle.DrawBorder(batch, Bounds, config.Opacity);
         batch.Draw(Game1.staminaRect, new Rectangle(Bounds.X + 1, Bounds.Y + TitleHeight, Bounds.Width - 2, 1),
             UiStyle.Border * config.Opacity);
@@ -139,7 +150,7 @@ internal abstract class OsWindow
         const int iconSize = 18;
         UiStyle.DrawIcon(batch, Icon, new Point(Bounds.X + 6, Bounds.Y + (TitleHeight - iconSize) / 2), 2, config.Opacity);
         Rectangle titleTextBounds = new(Bounds.X + 30, Bounds.Y, Math.Max(0, MinimizeBounds.X - Bounds.X - 36), TitleHeight);
-        DrawCenteredText(batch, Title, titleTextBounds, UiStyle.Primary, config);
+        DrawTitle(batch, titleTextBounds, config);
         DrawButton(batch, MinimizeBounds, cursor, config, close: false);
         DrawButton(batch, CloseBounds, cursor, config, close: true);
         DrawContent(batch, new Rectangle(Bounds.X + 1, Bounds.Y + TitleHeight + 1,
@@ -148,6 +159,33 @@ internal abstract class OsWindow
     }
 
     protected abstract void DrawContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config);
+
+    private void DrawTitle(SpriteBatch batch, Rectangle bounds, ModConfig config)
+    {
+        string subtext = TitleSubtext;
+        if (string.IsNullOrEmpty(subtext))
+        {
+            DrawCenteredText(batch, Title, bounds, UiStyle.Primary, config);
+            return;
+        }
+
+        // Keep the subtext visible when a long title (such as a chest name) is clipped.
+        int width = Math.Max(0, bounds.Width - 1);
+        subtext = UiText.Fit(subtext, width, config.FontScale);
+        Vector2 subtextSize = Game1.smallFont.MeasureString(subtext) * config.FontScale;
+        float gap = string.IsNullOrEmpty(subtext) ? 0 : Game1.smallFont.MeasureString(" ").X * config.FontScale;
+        string title = UiText.Fit(Title, Math.Max(0, width - (int)MathF.Ceiling(subtextSize.X + gap)), config.FontScale);
+        Vector2 titleSize = Game1.smallFont.MeasureString(title) * config.FontScale;
+        if (string.IsNullOrEmpty(title))
+            gap = 0;
+        float height = Math.Max(titleSize.Y, subtextSize.Y);
+        if (height + 1 > bounds.Height)
+            return;
+        float x = bounds.X + (bounds.Width - titleSize.X - gap - subtextSize.X) / 2;
+        float y = bounds.Y + (bounds.Height - height) / 2;
+        UiText.Draw(batch, title, new Vector2(x, y), UiStyle.Primary, config);
+        UiText.Draw(batch, subtext, new Vector2(x + titleSize.X + gap, y), UiStyle.Muted, config);
+    }
 
     protected static void DrawCenteredText(SpriteBatch batch, string text, Rectangle bounds, Color color, ModConfig config)
     {
@@ -161,6 +199,8 @@ internal abstract class OsWindow
 
     private void DrawResizeHandles(SpriteBatch batch, Point cursor, ModConfig config)
     {
+        if (!CanResize)
+            return;
         WindowResizeEdges edges = ActiveResizeEdges != WindowResizeEdges.None ? ActiveResizeEdges : GetResizeEdges(cursor);
         Color color = (edges == WindowResizeEdges.None ? UiStyle.Muted : UiStyle.Primary) * config.Opacity;
         for (int offset = 3; offset <= 9; offset += 3)

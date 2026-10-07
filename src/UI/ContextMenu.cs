@@ -7,6 +7,20 @@ namespace AgrariaOS.UI;
 
 internal sealed record ContextMenuItem(string Text, Action? OnClick = null, bool? IsChecked = null, bool IsEnabled = true);
 
+// The caller supplies a lookup for the clicked target and its lifetime guard. This is
+// shared by world providers, generic interactions and desktop content menus.
+internal sealed record ContextMenuInfo(Func<object?> GetSubject, Func<bool> IsValid);
+
+internal static class ContextMenuItems
+{
+    internal static ContextMenuItem[] WithInfo(ContextMenuItem[] items, ContextMenuInfo? info, Action<object> openInfo)
+        => info == null ? items : items.Append(new ContextMenuItem("Show Info", () =>
+        {
+            if (info.IsValid() && info.GetSubject() is { } subject)
+                openInfo(subject);
+        })).ToArray();
+}
+
 // One popup per desktop. Entries may be plain actions or checkable actions.
 internal sealed class ContextMenu
 {

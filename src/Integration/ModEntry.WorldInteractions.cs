@@ -63,6 +63,11 @@ public sealed partial class ModEntry
     {
         ModEntry mod = Instance;
         __state = mod.rightClickAction.Value;
+        if (mod.lookupReplay.Value != null)
+        {
+            mod.rightClickAction.Value = true;
+            return true;
+        }
         bool mouseAction = currentMouseState.RightButton == ButtonState.Pressed
             && !Game1.isOneOfTheseKeysDown(currentKBState, Game1.options.actionButton)
             && !currentPadState.IsButtonDown(Buttons.A);
@@ -77,6 +82,11 @@ public sealed partial class ModEntry
             }
             // Keyboard/controller actions keep the ordinary interaction, even with a popup open.
             mod.windowManager.Value.CloseContextMenu();
+        }
+        if (mod.TryShowLookupWorldMenu(currentKBState, currentMouseState, currentPadState))
+        {
+            __result = false;
+            return false;
         }
         return true;
     }
@@ -163,7 +173,7 @@ public sealed partial class ModEntry
             __instance.afterQuestion = null;
             __instance.lastQuestionKey = "Bus";
             __instance.answerDialogue(answer);
-        })))
+        }, new Vector2(tileLocation.X, tileLocation.Y))))
             return true;
         __result = true;
         return false;
@@ -211,7 +221,13 @@ public sealed partial class ModEntry
                 }
             }).ToArray();
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-            if (!windowManager.Value.ShowContextMenu(cursor, guardedItems, "Choose Option", IsValid))
+            // Use the native resolved entity or action tile, never a BusStop location
+            // masquerading as an item or a subject selected at the popup's current cursor.
+            object? subject = request.LookupTile is { } tile
+                ? lookupAnything.GetTileSubject(request.Location, tile)
+                : lookupAnything.GetEntitySubject(request.Target, request.Location);
+            ContextMenuInfo? info = subject == null ? null : new ContextMenuInfo(() => subject, IsValid);
+            if (!windowManager.Value.ShowContextMenu(cursor, guardedItems, "Choose Option", IsValid, info))
                 return false;
             // Suppress held repeats after vanilla has resolved this initial right-click.
             Helper.Input.Suppress(SButton.MouseRight);
