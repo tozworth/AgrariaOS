@@ -70,7 +70,7 @@ internal sealed class WindowManager
     internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));
     internal void OpenChat(ChatSession session, bool showLocal = false)
     {
-        Open(ChatWindow.WindowId, () => new ChatWindow(session));
+        Open(ChatWindow.WindowId, () => new ChatWindow(session, config, saveConfig));
         if (showLocal)
             ((ChatWindow)windows.Last()).SelectTab("Local");
     }
@@ -248,6 +248,19 @@ internal sealed class WindowManager
 
         return drawnWindows.LastOrDefault(window => window.IsValid && !window.IsMinimized
             && windows.Contains(window) && window.Bounds.Contains(cursor));
+    }
+
+    internal WindowResizeEdges GetResizeCursorEdges(Point cursor)
+    {
+        if (!CanReceiveInput || contextMenu.IsOpen)
+            return WindowResizeEdges.None;
+        // Keep the gesture's direction when the pointer leaves the edge or hits a size limit.
+        if (resizedWindow is { IsValid: true, IsMinimized: false } resizing && windows.Contains(resizing))
+            return resizing.ActiveResizeEdges;
+        if (draggedWindow != null || contentDragWindow != null || itemDragSource != null)
+            return WindowResizeEdges.None;
+        // Match click dispatch: covered windows must never supply a resize cursor.
+        return GetWindowAt(cursor)?.GetResizeEdges(cursor) ?? WindowResizeEdges.None;
     }
 
     internal void Update(IInputHelper input)

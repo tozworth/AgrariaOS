@@ -63,11 +63,6 @@ public sealed partial class ModEntry
     {
         ModEntry mod = Instance;
         __state = mod.rightClickAction.Value;
-        if (mod.lookupReplay.Value != null)
-        {
-            mod.rightClickAction.Value = true;
-            return true;
-        }
         bool mouseAction = currentMouseState.RightButton == ButtonState.Pressed
             && !Game1.isOneOfTheseKeysDown(currentKBState, Game1.options.actionButton)
             && !currentPadState.IsButtonDown(Buttons.A);
@@ -82,11 +77,6 @@ public sealed partial class ModEntry
             }
             // Keyboard/controller actions keep the ordinary interaction, even with a popup open.
             mod.windowManager.Value.CloseContextMenu();
-        }
-        if (mod.TryShowLookupWorldMenu(currentKBState, currentMouseState, currentPadState))
-        {
-            __result = false;
-            return false;
         }
         return true;
     }

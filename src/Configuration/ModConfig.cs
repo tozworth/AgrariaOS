@@ -15,6 +15,7 @@ public sealed class ModConfig
     public bool ShowLocation { get; set; } = true;
     public bool ShowSecurity { get; set; } = true;
     public bool ShowWeather { get; set; } = true;
+    public bool ShowChatTimestamps { get; set; } = true;
     // Farmer IDs survive reloads and split-screen reconnects; screen IDs don't.
     public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
 

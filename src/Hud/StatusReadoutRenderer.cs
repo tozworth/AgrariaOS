@@ -8,7 +8,7 @@ using StardewValley.Menus;
 
 namespace AgrariaOS.Hud;
 
-internal sealed class StatusReadoutRenderer
+internal sealed class StatusReadoutRenderer : IDisposable
 {
     private static readonly Color PrimaryColor = new(226, 233, 239);
     private static readonly Color SecondaryColor = new(166, 187, 204);
@@ -16,6 +16,7 @@ internal sealed class StatusReadoutRenderer
     private Snapshot? previous;
     private string dateAndTime = "";
     private string conditionsAndMoney = "";
+    private Texture2D? cornerShadow;
 
     public void Draw(SpriteBatch batch, DayTimeMoneyBox clock, ModConfig config, int leftInset)
     {
@@ -57,6 +58,7 @@ internal sealed class StatusReadoutRenderer
         int lineCount = (config.ShowLocation ? 1 : 0) + 2 + (Game1.player.hasVisibleQuests || Game1.options.zoomButtons ? 1 : 0);
         float x = MathF.Floor(Math.Clamp(Math.Max(config.X, leftInset), 0, Math.Max(0, Game1.uiViewport.Width - width - 8)));
         float y = MathF.Floor(Math.Clamp(config.Y, 0, Math.Max(0, Game1.uiViewport.Height - lineCount * lineHeight - 8)));
+        DrawCornerShadow(batch, x + width, y + lineCount * lineHeight, config.Opacity);
         if (config.ShowLocation)
         {
             UiText.Draw(batch, locationText, new Vector2(x, y), SecondaryColor, config);
@@ -87,6 +89,40 @@ internal sealed class StatusReadoutRenderer
             x += clock.zoomOutButton.bounds.Width + 10;
             clock.zoomInButton.bounds = DrawControl(batch, "[+]", new Vector2(x, y), config);
         }
+    }
+
+    private void DrawCornerShadow(SpriteBatch batch, float right, float bottom, float opacity)
+    {
+        if (cornerShadow == null || cornerShadow.IsDisposed || cornerShadow.GraphicsDevice != batch.GraphicsDevice)
+        {
+            cornerShadow?.Dispose();
+            // Cache a radial fade in the existing HUD batch; keep its PointClamp sampler
+            // and pixel-aligned text intact. Only the bottom-right quarter is needed.
+            const int size = 512;
+            var pixels = new Color[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float distance = MathF.Sqrt(x * x + y * y) / (size - 1);
+                    float fade = Math.Clamp((distance - 0.2f) / 0.8f, 0f, 1f);
+                    pixels[y * size + x] = Color.Black * (0.65f * (1f - fade * fade * (3f - 2f * fade)));
+                }
+            }
+            cornerShadow = new Texture2D(batch.GraphicsDevice, size, size);
+            cornerShadow.SetData(pixels);
+        }
+
+        // Stay anchored to the viewport corner, with a soft edge beyond the readout.
+        int radius = (int)MathF.Ceiling(Math.Max(420f, MathF.Sqrt(right * right + bottom * bottom) + 160f));
+        batch.Draw(cornerShadow, new Rectangle(0, 0, radius, radius), null, Color.White * opacity,
+            0f, Vector2.Zero, SpriteEffects.None, 0.89f);
+    }
+
+    public void Dispose()
+    {
+        cornerShadow?.Dispose();
+        cornerShadow = null;
     }
 
     private static Rectangle DrawControl(SpriteBatch batch, string text, Vector2 position, ModConfig config)

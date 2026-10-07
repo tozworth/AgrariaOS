@@ -41,6 +41,7 @@ public sealed partial class ModEntry : Mod
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
         () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything));
     private LookupAnythingIntegration lookupAnything = null!;
+    private readonly HardwareCursor hardwareCursor = new();
     private ModConfig config = null!;
     private bool patchInstalled;
     private bool toolbarPatchInstalled;
@@ -82,9 +83,14 @@ public sealed partial class ModEntry : Mod
             if (Game1.activeClickableMenu is GameMenu && Game1.options.showMenuBackground)
                 pelicom.Value.draw(e.SpriteBatch);
         };
-        helper.Events.Display.WindowResized += (_, _) => windowManager.Value.InvalidateLayout();
+        helper.Events.Display.WindowResized += (_, _) =>
+        {
+            windowManager.Value.InvalidateLayout();
+            hardwareCursor.Reset();
+        };
         helper.Events.Display.MenuChanged += (_, e) =>
         {
+            hardwareCursor.Reset();
             // Also release the text field if another mod or a title transition replaces it.
             if (e.OldMenu is NumberEntryMenu numberEntry)
                 numberEntry.emergencyShutDown();
@@ -96,14 +102,18 @@ public sealed partial class ModEntry : Mod
                 Game1.onScreenMenus.Add(pelicom.Value);
             RouteDialogue();
             windowManager.Value.Update(helper.Input);
+            UpdateHardwareCursor();
         };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
+            hardwareCursor.Reset();
             foreach (var screen in windowManager.GetActiveValues())
             {
                 screen.Value.CloseAll();
             }
             osHudActive.ResetAllScreens();
+            foreach (var screen in statusReadoutRenderer.GetActiveValues())
+                screen.Value.Dispose();
             statusReadoutRenderer.ResetAllScreens();
             toolbarRenderer.ResetAllScreens();
             notificationHistory.ResetAllScreens();
@@ -115,7 +125,6 @@ public sealed partial class ModEntry : Mod
             rightClickAction.ResetAllScreens();
             telephoneTarget.ResetAllScreens();
             worldInteractionsFailed.ResetAllScreens();
-            lookupReplay.ResetAllScreens();
         };
     }
 
@@ -157,6 +166,7 @@ public sealed partial class ModEntry : Mod
 
         osHudActive.Value = !osHudActive.Value;
         windowManager.Value.InvalidateLayout();
+        hardwareCursor.Reset();
         Helper.Input.Suppress(e.Button);
         // Restore click targets before the next input update, including while the HUD is hidden.
         foreach (Toolbar toolbar in Game1.onScreenMenus.OfType<Toolbar>())
@@ -171,21 +181,39 @@ public sealed partial class ModEntry : Mod
 
     private bool UsePelicom => patchInstalled && config.Enabled && osHudActive.Value && Context.IsWorldReady;
 
+    private void UpdateHardwareCursor()
+    {
+        // Stardew disables hardware cursors in split screen. Only the primary screen
+        // manages the process-wide cursor so another screen can't overwrite it.
+        if (Context.ScreenId != 0)
+            return;
+        if (!UsePelicom || !Game1.options.hardwareCursor || !Game1.game1.IsActiveNoOverlay)
+        {
+            hardwareCursor.Reset();
+            return;
+        }
+        Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+        hardwareCursor.Update(windowManager.Value.GetResizeCursorEdges(cursor));
+    }
+
     private void OnPelicomDrawFailed(Exception ex)
     {
         osHudActive.Value = false;
+        hardwareCursor.Reset();
         Monitor.Log($"Pelicom failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
     }
 
     private void OnWindowDrawFailed(Exception ex)
     {
         osHudActive.Value = false;
+        hardwareCursor.Reset();
         Monitor.Log($"Window drawing failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
     }
 
     private void OnInventoryTransferFailed(Exception ex)
     {
         osHudActive.Value = false;
+        hardwareCursor.Reset();
         windowManager.Value.InvalidateLayout();
         Monitor.Log($"Inventory transfer failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
     }

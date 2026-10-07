@@ -5,9 +5,10 @@ separate mod: Agraria does not reference, copy, package, or modify its DLL on di
 currently binds to LA 1.55.0 and Stardew 1.6.15/SMAPI 4.5.2. If LA is absent or its internal
 members are incompatible, Show Info is omitted and the other Agraria features continue.
 
-Right-click a backpack/chest row to choose **Show Info**. On a world target recognized by LA,
-the popup offers **Show Info** and **Interact**. Interact continues the game's action at the
-original cursor position, including Agraria's chest handling. Registered world-menu providers
+Right-click a backpack/chest row to choose **Show Info**. World right-clicks run the game's
+normal action first, including Agraria's chest handling. Only when no action is handled does
+a target recognized by LA get a **Show Info** popup. Doors, machine collection, chests,
+NPCs, animals and item placement keep their direct interactions. Registered world-menu providers
 keep their **Choose Option** menus, with **Show Info** added alongside the native choices
 when LA recognizes the target. This includes TV, telephone and the bus ticket machine.
 The bus uses its resolved map tile; LA normally has no ticket-machine entry, so Show Info
@@ -36,13 +37,14 @@ All contextual Show Info entries are composed by `WindowManager.ShowContextMenu`
 `ContextMenuItems.WithInfo`. Desktop windows supply `GetContextMenuInfo`; world providers
 supply a native entity or `WorldMenuRequest.LookupTile`. Their actions and lifetime guards
 remain intact. Each `IWorldContextMenuProvider` declares `OwnsTarget` so the router gives its
-menu priority over the generic Interact popup. New providers don't need LA-specific patches
+menu priority over the generic Show Info popup. New providers don't need LA-specific patches
 or a type allowlist in the integration. UI menus without a lookup target, such as the rail,
 remain ordinary menus. This does not turn every vanilla modal dialogue into an Agraria popup.
 
-Before calling the integration visually verified, check Show Info on items, NPCs, crops,
-machines and animals; scrolling and linked pages; overlapping windows; moving,
-minimize/restore/close; Interact on chests/ordinary world actions; TV/phone choices and their
+Before calling the integration visually verified, check Show Info on backpack/chest rows
+and world targets without an action; scrolling and linked pages; overlapping windows; moving,
+minimize/restore/close; direct right-click on doors, ready machines, chests, NPCs and animals;
+Show Info on targets without an action; TV/phone choices and their
 Show Info entries (including incoming calls); bus tickets; F1/F8; UI scaling;
 save/title and location transitions; and split-screen. Build and headless signature/patch,
 color-scope, cleanup and fixed-window checks do not replace these in-game checks.
