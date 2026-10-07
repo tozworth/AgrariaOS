@@ -19,6 +19,7 @@ internal sealed class Pelicom : IClickableMenu
     private const int InventoryEntryIndex = 1;
     private const int ChatEntryIndex = 6;
     private const int NotificationsEntryIndex = 7;
+    private const int ExitEntryIndex = 8;
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Dashboard"),
@@ -79,7 +80,7 @@ internal sealed class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Inventory, Mail, Chat and Notifications open desktop windows; other entries are placeholders.
+    // Inventory, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         if (!IsInteractive || !drawnBounds.Contains(x, y))
@@ -92,6 +93,9 @@ internal sealed class Pelicom : IClickableMenu
             openNotifications();
         else if (drawnSlots[ChatEntryIndex].Contains(x, y))
             openChat();
+        else if (drawnSlots[ExitEntryIndex].Contains(x, y))
+            // Terminate immediately without entering the game's save or shutdown flow.
+            Environment.Exit(0);
     }
     public override void receiveRightClick(int x, int y, bool playSound = true)
     {
