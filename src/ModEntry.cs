@@ -14,8 +14,8 @@ namespace AgrariaOS;
 public sealed partial class ModEntry : Mod
 {
     private static ModEntry Instance = null!;
-    private readonly PerScreen<bool> textHudActive = new(() => true);
-    private readonly PerScreen<HudRenderer> renderer = new(() => new HudRenderer());
+    private readonly PerScreen<bool> osHudActive = new(() => true);
+    private readonly PerScreen<StatusReadoutRenderer> statusReadoutRenderer = new(() => new StatusReadoutRenderer());
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
     private readonly PerScreen<Pelicom> pelicom = new(() => new Pelicom(Instance.config,
         () => Instance.UsePelicom, Instance.OnPelicomDrawFailed, () => Instance.windowManager.Value.OpenMail(),
@@ -56,8 +56,8 @@ public sealed partial class ModEntry : Mod
         };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
-            textHudActive.ResetAllScreens();
-            renderer.ResetAllScreens();
+            osHudActive.ResetAllScreens();
+            statusReadoutRenderer.ResetAllScreens();
             toolbarRenderer.ResetAllScreens();
             pelicom.ResetAllScreens();
             windowManager.ResetAllScreens();
@@ -87,7 +87,7 @@ public sealed partial class ModEntry : Mod
         if (!patchInstalled || !config.Enabled || !Context.IsWorldReady || !Context.IsPlayerFree || e.Button != config.ToggleKey)
             return;
 
-        textHudActive.Value = !textHudActive.Value;
+        osHudActive.Value = !osHudActive.Value;
         windowManager.Value.InvalidateLayout();
         Helper.Input.Suppress(e.Button);
         // Restore click targets before the next input update, including while the HUD is hidden.
@@ -96,22 +96,22 @@ public sealed partial class ModEntry : Mod
             if (!UseCompactToolbar)
                 toolbarRenderer.Value.RestoreLayout(toolbar);
         }
-        Monitor.Log(textHudActive.Value ? "Agraria OS HUD enabled." : "Vanilla HUD enabled.", LogLevel.Info);
+        Monitor.Log(osHudActive.Value ? "Agraria OS HUD enabled." : "Vanilla HUD enabled.", LogLevel.Info);
     }
 
-    private bool UseCompactToolbar => toolbarPatchInstalled && config.Enabled && textHudActive.Value && Context.IsWorldReady;
+    private bool UseCompactToolbar => toolbarPatchInstalled && config.Enabled && osHudActive.Value && Context.IsWorldReady;
 
-    private bool UsePelicom => patchInstalled && config.Enabled && textHudActive.Value && Context.IsWorldReady;
+    private bool UsePelicom => patchInstalled && config.Enabled && osHudActive.Value && Context.IsWorldReady;
 
     private void OnPelicomDrawFailed(Exception ex)
     {
-        textHudActive.Value = false;
+        osHudActive.Value = false;
         Monitor.Log($"Pelicom failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
     }
 
     private void OnWindowDrawFailed(Exception ex)
     {
-        textHudActive.Value = false;
+        osHudActive.Value = false;
         Monitor.Log($"Window drawing failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
     }
 

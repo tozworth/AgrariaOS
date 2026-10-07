@@ -23,7 +23,7 @@ public sealed partial class ModEntry
                 prefix: new HarmonyMethod(typeof(ModEntry), nameof(DrawClockPrefix))
             );
             patchInstalled = true;
-            Monitor.Log($"Text HUD ready. {config.ToggleKey} switches between Agraria OS and the vanilla HUD.", LogLevel.Info);
+            Monitor.Log($"Status readout ready. {config.ToggleKey} switches between Agraria OS and the vanilla HUD.", LogLevel.Info);
         }
         catch (Exception ex)
         {
@@ -120,7 +120,7 @@ public sealed partial class ModEntry
         }
         catch (Exception ex)
         {
-            mod.textHudActive.Value = false;
+            mod.osHudActive.Value = false;
             mod.toolbarRenderer.Value.RestoreLayout(__instance);
             mod.Monitor.Log($"Compact toolbar failed; restored the vanilla HUD.\n{ex}", LogLevel.Error);
             return true;
@@ -151,19 +151,19 @@ public sealed partial class ModEntry
     private static bool DrawClockPrefix(DayTimeMoneyBox __instance, SpriteBatch b)
     {
         ModEntry mod = Instance;
-        if (!mod.config.Enabled || !mod.textHudActive.Value || !Context.IsWorldReady || __instance != Game1.dayTimeMoneyBox)
+        if (!mod.config.Enabled || !mod.osHudActive.Value || !Context.IsWorldReady || __instance != Game1.dayTimeMoneyBox)
             return true;
 
         try
         {
-            mod.renderer.Value.Draw(b, __instance, mod.config, mod.pelicom.Value.IsVisible ? Pelicom.StripWidth + 8 : 0);
+            mod.statusReadoutRenderer.Value.Draw(b, __instance, mod.config, mod.pelicom.Value.IsVisible ? Pelicom.StripWidth + 8 : 0);
             return false;
         }
         catch (Exception ex)
         {
             // Fail once per screen, then let vanilla restore its drawing and button positions.
-            mod.textHudActive.Value = false;
-            mod.Monitor.Log($"Text HUD failed; restored the vanilla clock.\n{ex}", LogLevel.Error);
+            mod.osHudActive.Value = false;
+            mod.Monitor.Log($"Status readout failed; restored the vanilla clock.\n{ex}", LogLevel.Error);
             return true;
         }
     }

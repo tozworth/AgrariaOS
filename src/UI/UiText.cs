@@ -7,6 +7,28 @@ namespace AgrariaOS.UI;
 
 internal static class UiText
 {
+    internal static string Fit(string text, int width, float scale)
+    {
+        if (width <= 0 || string.IsNullOrEmpty(text))
+            return "";
+        if (Game1.smallFont.MeasureString(text).X * scale <= width)
+            return text;
+        const string suffix = "...";
+        if (Game1.smallFont.MeasureString(suffix).X * scale > width)
+            return "";
+        int length = text.Length;
+        while (length > 0)
+        {
+            length--;
+            if (length > 0 && char.IsHighSurrogate(text[length - 1]))
+                length--;
+            string shortened = text[..length] + suffix;
+            if (Game1.smallFont.MeasureString(shortened).X * scale <= width)
+                return shortened;
+        }
+        return suffix;
+    }
+
     internal static void Draw(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config)
     {
         position = new Vector2(MathF.Round(position.X), MathF.Round(position.Y));

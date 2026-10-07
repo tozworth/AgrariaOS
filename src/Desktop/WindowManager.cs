@@ -17,8 +17,11 @@ internal sealed class WindowManager
     private readonly List<OsWindow> drawnWindows = new();
     private Point drawnViewport;
     private OsWindow? draggedWindow;
+    private OsWindow? resizedWindow;
     private OsWindow? contentDragWindow;
     private Point dragOffset;
+    private Point resizeStartCursor;
+    private Rectangle resizeStartBounds;
 
     internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed)
     {
@@ -61,6 +64,13 @@ internal sealed class WindowManager
                 window.IsMinimized = true;
                 EndDrag();
             }
+            else if (window.GetResizeEdges(cursor) is var edges && edges != WindowResizeEdges.None)
+            {
+                resizedWindow = window;
+                window.ActiveResizeEdges = edges;
+                resizeStartCursor = cursor;
+                resizeStartBounds = window.Bounds;
+            }
             else if (window.TitleBounds.Contains(cursor))
             {
                 draggedWindow = window;
@@ -101,7 +111,8 @@ internal sealed class WindowManager
         // Suppression reports the button released to the game on subsequent ticks.
         // SMAPI retains the suppression flag until the physical button is released.
         bool leftButtonHeld = input.IsDown(SButton.MouseLeft) || input.IsSuppressed(SButton.MouseLeft);
-        if (!leftButtonHeld || !isVisible() || Game1.IsChatting)
+        if (!leftButtonHeld || !isVisible() || Game1.IsChatting
+            || drawnViewport != new Point(Game1.uiViewport.Width, Game1.uiViewport.Height))
         {
             EndDrag();
             return;
@@ -110,12 +121,16 @@ internal sealed class WindowManager
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
         if (draggedWindow != null)
             draggedWindow.MoveTo(cursor - dragOffset);
+        resizedWindow?.ResizeFrom(resizeStartBounds, cursor - resizeStartCursor, resizedWindow.ActiveResizeEdges);
         contentDragWindow?.DragContent(cursor);
     }
 
     internal void EndDrag()
     {
         draggedWindow = null;
+        if (resizedWindow != null)
+            resizedWindow.ActiveResizeEdges = WindowResizeEdges.None;
+        resizedWindow = null;
         contentDragWindow?.EndContentDrag();
         contentDragWindow = null;
     }
@@ -141,11 +156,13 @@ internal sealed class WindowManager
             const int margin = 8;
             int left = Pelicom.StripWidth + margin;
             Rectangle workArea = new(left, margin, Math.Max(0, drawnViewport.X - left - margin), Math.Max(0, drawnViewport.Y - margin * 2));
-            int titleHeight = Math.Max(27, (int)MathF.Ceiling(Game1.smallFont.LineSpacing * config.FontScale)) + 6;
+            float titleTextHeight = windows.Count == 0 ? Game1.smallFont.LineSpacing
+                : windows.Max(window => Game1.smallFont.MeasureString(window.Title).Y);
+            int titleHeight = Math.Max(27, (int)MathF.Ceiling(titleTextHeight * config.FontScale)) + 6;
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             foreach (OsWindow window in windows)
             {
-                if (!window.IsMinimized && window.Layout(workArea, titleHeight))
+                if (!window.IsMinimized && window.Layout(workArea, titleHeight, config))
                 {
                     window.Draw(batch, config, cursor);
                     drawnWindows.Add(window);

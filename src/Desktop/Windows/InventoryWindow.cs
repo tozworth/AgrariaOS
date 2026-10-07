@@ -40,6 +40,9 @@ internal sealed class InventoryWindow : OsWindow
     internal override Point DefaultSize => new(600, 420);
     private int MaxFirstRow => Math.Max(0, items.Count - visibleRows);
 
+    protected override Point GetMinimumSize(ModConfig config)
+        => new(320, TitleHeight + 2 + Padding * 2 + GetRowHeight(Game1.smallFont, config.FontScale) * 3 + 1);
+
     protected override void DrawContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config)
     {
         // Preserve backpack slot order and separate stacks; never mutate the player's items.
@@ -51,7 +54,7 @@ internal sealed class InventoryWindow : OsWindow
         }
 
         int rowHeight = GetRowHeight(Game1.smallFont, config.FontScale);
-        if (contentBounds.Height < rowHeight * 2 + Padding * 2 + 1)
+        if (contentBounds.Height < rowHeight * 3 + Padding * 2 + 1)
         {
             Array.Clear(headers);
             rowsBounds = scrollTrack = scrollThumb = Rectangle.Empty;
@@ -72,7 +75,7 @@ internal sealed class InventoryWindow : OsWindow
         int availableHeight = Math.Max(0, contentBounds.Height - Padding * 2 - rowHeight * 2 - 1);
         visibleRows = availableHeight / rowHeight;
         firstRow = Math.Clamp(firstRow, 0, MaxFirstRow);
-        rowsBounds = new Rectangle(headers[0].X, headers[0].Bottom + 1, tableWidth, visibleRows * rowHeight);
+        rowsBounds = new Rectangle(headers[0].X, headers[0].Bottom + 1, tableWidth, availableHeight);
         scrollTrack = new Rectangle(rowsBounds.Right + 2, rowsBounds.Y, ScrollbarWidth - 4, rowsBounds.Height);
         scrollThumb = Rectangle.Empty;
         if (MaxFirstRow > 0 && rowsBounds.Height > 0)
@@ -245,32 +248,12 @@ internal sealed class InventoryWindow : OsWindow
         int width = cell.Width - Padding * 2 - 1; // Reserve the shadow and divider pixel too.
         if (width <= 0 || string.IsNullOrEmpty(text))
             return;
-        string fitted = FitText(text, width, config.FontScale);
+        string fitted = UiText.Fit(text, width, config.FontScale);
         Vector2 size = Game1.smallFont.MeasureString(fitted) * config.FontScale;
         if (size.Y + 1 > cell.Height)
             return;
         float x = rightAligned ? cell.Right - Padding - 1 - size.X : cell.X + Padding;
         UiText.Draw(batch, fitted, new Vector2(x, cell.Y + (cell.Height - size.Y) / 2), color, config);
-    }
-
-    private static string FitText(string text, int width, float scale)
-    {
-        if (Game1.smallFont.MeasureString(text).X * scale <= width)
-            return text;
-        const string suffix = "...";
-        if (Game1.smallFont.MeasureString(suffix).X * scale > width)
-            return "";
-        int length = text.Length;
-        while (length > 0)
-        {
-            length--;
-            if (length > 0 && char.IsHighSurrogate(text[length - 1]))
-                length--;
-            string shortened = text[..length] + suffix;
-            if (Game1.smallFont.MeasureString(shortened).X * scale <= width)
-                return shortened;
-        }
-        return suffix;
     }
 
     private static void DrawItemIcon(SpriteBatch batch, Item item, Rectangle bounds, float opacity)

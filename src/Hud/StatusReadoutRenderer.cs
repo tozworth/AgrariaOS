@@ -8,7 +8,7 @@ using StardewValley.Menus;
 
 namespace AgrariaOS.Hud;
 
-internal sealed class HudRenderer
+internal sealed class StatusReadoutRenderer
 {
     private static readonly Color PrimaryColor = new(226, 233, 239);
     private static readonly Color SecondaryColor = new(166, 187, 204);
