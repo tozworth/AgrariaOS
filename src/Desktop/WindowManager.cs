@@ -12,6 +12,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Menus;
 using StardewValley.Objects;
 
 namespace AgrariaOS.Desktop;
@@ -27,7 +28,9 @@ internal sealed class WindowManager
     private readonly Func<ClickToMove> getMovement;
     private Dictionary<string, WindowPlacement>? layouts;
     // Last entry is the front window, in both drawing and hit testing.
+    // Grouped windows share one frame; a group's z-order is its frontmost member.
     private readonly List<OsWindow> windows = new();
+    private readonly List<WindowTabGroup> tabGroups = new();
     private bool suppressOpenSave;
     private static readonly HashSet<string> PersistentWindowIds = new(StringComparer.Ordinal)
     {
@@ -44,19 +47,22 @@ internal sealed class WindowManager
     private readonly ContextMenu contextMenu = new();
     private Point drawnViewport;
     private OsWindow? draggedWindow;
+    private WindowTabGroup? draggedGroup;
     private OsWindow? resizedWindow;
+    private WindowTabGroup? resizedGroup;
     private OsWindow? contentDragWindow;
     private Point dragOffset;
     private Point resizeStartCursor;
     private Rectangle resizeStartBounds;
     private OsWindow? keyboardWindow;
     private OsWindow? focusedWindow;
-    private InventoryWindow? itemDragSource;
-    private Item[] draggedItems = Array.Empty<Item>();
-    private Item? pressedItem;
+    private OsWindow? itemDragSource;
+    private ISalable[] draggedItems = Array.Empty<ISalable>();
+    private ISalable? pressedItem;
     private Point itemDragStart;
     private bool itemDragActive;
     private bool collapseSelectionOnRelease;
+    private readonly Queue<ISalable> pendingBuys = new();
     private (int Version, InventoryWindow Source, InventoryWindow Target)? pendingTransfer;
     private bool HasPendingTransfer => pendingTransfer.HasValue;
     private int transferVersion;
@@ -79,21 +85,41 @@ internal sealed class WindowManager
 
     internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(config, saveConfig, lookupAnything, getMovement, FocusWorld));
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
-    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything));
+    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything, getTradeShop: GetTradeShop));
     internal void OpenLivestock() => Open(LivestockWindow.WindowId, () => new LivestockWindow());
     internal void OpenSocial() => Open(SocialWindow.WindowId, () => new SocialWindow(lookupAnything, OpenLookup));
     internal void OpenMiningLedger(MiningLedger ledger) => Open(MiningLedgerWindow.WindowId, () => new MiningLedgerWindow(ledger));
     internal void OpenChestInventory(Chest chest)
     {
-        Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest, lookupAnything));
-        ((InventoryWindow)windows.Last()).ShowChest(chest);
+        Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest, lookupAnything, GetTradeShop));
+        if (windows.FirstOrDefault(window => window.Id == InventoryWindow.ChestWindowId) is InventoryWindow chestWindow)
+            chestWindow.ShowChest(chest);
+    }
+    internal void OpenTrade(ShopMenu shop)
+    {
+        Open(TradeWindow.WindowId, () => new TradeWindow(config, shop, lookupAnything, EnqueueBuys));
+        if (windows.FirstOrDefault(window => window.Id == TradeWindow.WindowId) is TradeWindow tradeWindow)
+            tradeWindow.ShowShop(shop);
+    }
+    internal TradeWindow? GetTradeWindow()
+        => windows.FirstOrDefault(window => window.Id == TradeWindow.WindowId) as TradeWindow;
+    internal ShopMenu? GetTradeShop()
+    {
+        TradeWindow? trade = GetTradeWindow();
+        return trade is { IsValid: true } ? trade.Shop : null;
+    }
+    internal void CloseTrade()
+    {
+        if (GetTradeWindow() is { } trade)
+            CloseWindow(trade);
+        pendingBuys.Clear();
     }
     internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));
     internal void OpenChat(ChatSession session, bool showLocal = false)
     {
         Open(ChatWindow.WindowId, () => new ChatWindow(session, config, saveConfig));
-        if (showLocal)
-            ((ChatWindow)windows.Last()).SelectTab("Local");
+        if (showLocal && windows.FirstOrDefault(window => window.Id == ChatWindow.WindowId) is ChatWindow chatWindow)
+            chatWindow.SelectTab("Local");
     }
 
     internal void Open(string id, Func<OsWindow> create)
@@ -130,11 +156,24 @@ internal sealed class WindowManager
                 saveConfig();
             });
         }
-        window.IsMinimized = false;
-        windows.Remove(window);
-        windows.Add(window);
+        WindowTabGroup? group = FindGroup(window);
+        if (group != null)
+        {
+            // Reopening a tabbed window restores the whole frame and selects the tab.
+            foreach (OsWindow member in group.Tabs)
+                member.IsMinimized = false;
+            group.SetActive(window);
+            BringGroupToFront(group);
+        }
+        else
+        {
+            window.IsMinimized = false;
+            windows.Remove(window);
+            windows.Add(window);
+        }
         focusedWindow = window;
         RememberOpenWindows();
+        RememberTabGroups();
     }
 
     internal bool IsMinimized(string id) => windows.Any(window => window.Id == id && window.IsMinimized);
@@ -174,6 +213,7 @@ internal sealed class WindowManager
                 }
                 catch { }
             }
+            RestoreTabGroups(farmerId);
             FocusWorld();
         }
         finally
@@ -181,6 +221,7 @@ internal sealed class WindowManager
             suppressOpenSave = false;
         }
         RememberOpenWindows();
+        RememberTabGroups();
     }
 
     private void RememberOpenWindows()
@@ -204,15 +245,177 @@ internal sealed class WindowManager
         catch { }
     }
 
+    internal WindowTabGroup? FindGroup(OsWindow window)
+        => tabGroups.FirstOrDefault(group => group.Contains(window));
+
+    private void BringGroupToFront(WindowTabGroup group)
+    {
+        foreach (OsWindow member in group.Tabs.ToArray())
+        {
+            windows.Remove(member);
+            windows.Add(member);
+        }
+    }
+
+    private bool IsFrontmost(OsWindow window)
+    {
+        if (!window.IsValid || window.IsMinimized || !windows.Contains(window))
+            return false;
+        WindowTabGroup? group = FindGroup(window);
+        if (group != null && !ReferenceEquals(group.Active, window))
+            return false;
+        int frameIndex(OsWindow candidate)
+        {
+            WindowTabGroup? candidateGroup = FindGroup(candidate);
+            if (candidateGroup != null)
+                return candidateGroup.Tabs.Where(member => windows.Contains(member)).Select(member => windows.IndexOf(member)).DefaultIfEmpty(-1).Max();
+            return windows.IndexOf(candidate);
+        }
+        int targetIndex = group != null
+            ? group.Tabs.Where(member => windows.Contains(member)).Select(member => windows.IndexOf(member)).DefaultIfEmpty(-1).Max()
+            : windows.IndexOf(window);
+        if (targetIndex < 0)
+            return false;
+        foreach (OsWindow candidate in windows)
+        {
+            if (!candidate.IsValid || candidate.IsMinimized)
+                continue;
+            WindowTabGroup? candidateGroup = FindGroup(candidate);
+            if (candidateGroup != null && !ReferenceEquals(candidateGroup.Active, candidate))
+                continue;
+            if (frameIndex(candidate) > targetIndex)
+                return false;
+        }
+        return true;
+    }
+
+    private void RememberTabGroups()
+    {
+        if (suppressOpenSave || !Context.IsWorldReady)
+            return;
+        try
+        {
+            long farmerId = Game1.player.UniqueMultiplayerID;
+            var current = new List<TabGroupState>();
+            foreach (WindowTabGroup group in tabGroups)
+            {
+                if (group.Tabs.Count < 2)
+                    continue;
+                if (group.Tabs.Any(member => !member.IsValid || !windows.Contains(member)))
+                    continue;
+                current.Add(new TabGroupState
+                {
+                    WindowIds = group.Tabs.Select(member => member.Id).ToList(),
+                    ActiveId = group.Active.Id
+                });
+            }
+            if (config.WindowTabGroups.TryGetValue(farmerId, out List<TabGroupState>? saved) && saved != null
+                && saved.Count == current.Count && saved.Zip(current).All(pair =>
+                    string.Equals(pair.First.ActiveId, pair.Second.ActiveId, StringComparison.Ordinal)
+                    && pair.First.WindowIds.Count == pair.Second.WindowIds.Count
+                    && pair.First.WindowIds.Zip(pair.Second.WindowIds).All(ids => string.Equals(ids.First, ids.Second, StringComparison.Ordinal))))
+                return;
+            config.WindowTabGroups[farmerId] = current;
+            saveConfig();
+        }
+        catch { }
+    }
+
+    private void RestoreTabGroups(long farmerId)
+    {
+        if (!config.WindowTabGroups.TryGetValue(farmerId, out List<TabGroupState>? saved) || saved == null)
+            return;
+        tabGroups.Clear();
+        foreach (TabGroupState state in saved.ToArray())
+        {
+            try
+            {
+                if (state?.WindowIds == null || state.WindowIds.Count < 2)
+                    continue;
+                var members = new List<OsWindow>();
+                foreach (string id in state.WindowIds)
+                {
+                    if (string.IsNullOrWhiteSpace(id))
+                        continue;
+                    OsWindow? window = windows.FirstOrDefault(candidate => candidate.Id == id && !members.Contains(candidate)
+                        && FindGroup(candidate) == null && candidate.IsValid);
+                    if (window != null)
+                        members.Add(window);
+                }
+                if (members.Count < 2)
+                    continue;
+                OsWindow active = members.FirstOrDefault(member => string.Equals(member.Id, state.ActiveId, StringComparison.Ordinal)) ?? members[0];
+                WindowPlacement? placement = members.Select(member => member.GetPlacement()).FirstOrDefault(placement => placement != null)
+                    ?? active.GetPlacement();
+                var group = new WindowTabGroup(members, active, placement ?? new WindowPlacement { X = 0, Y = 0, Width = 420, Height = 260 });
+                // Members already carry the saved shared placement; the next draw syncs bounds.
+                tabGroups.Add(group);
+                group.SetActive(active);
+                bool minimized = members.All(member => member.IsMinimized);
+                if (!minimized && members.Any(member => member.IsMinimized))
+                {
+                    // A partially minimized restore (e.g. from an older config) heals to visible.
+                    foreach (OsWindow member in members)
+                        member.IsMinimized = false;
+                }
+            }
+            catch { }
+        }
+    }
+
+    private void DissolveGroupIfSingle(WindowTabGroup group)
+    {
+        if (group.Tabs.Count < 2)
+            tabGroups.Remove(group);
+    }
+
+    private void RememberGroupPlacement(WindowTabGroup group)
+    {
+        foreach (OsWindow member in group.Tabs)
+            RememberPlacement(member);
+    }
+
+    private void CloseWindow(OsWindow window)
+    {
+        WindowTabGroup? group = FindGroup(window);
+        if (group != null)
+        {
+            group.RemoveTab(window);
+            DissolveGroupIfSingle(group);
+        }
+        RememberPlacement(window);
+        windows.Remove(window);
+        try { window.Close(); }
+        catch { }
+        if (window is TradeWindow)
+            pendingBuys.Clear();
+        if (ReferenceEquals(focusedWindow, window))
+            focusedWindow = null;
+        if (ReferenceEquals(keyboardWindow, window))
+            ClearKeyboardFocus();
+    }
+
+    private void CloseGroup(WindowTabGroup group)
+    {
+        foreach (OsWindow member in group.Tabs.ToArray())
+        {
+            RememberPlacement(member);
+            windows.Remove(member);
+            try { member.Close(); }
+            catch { }
+        }
+        tabGroups.Remove(group);
+        focusedWindow = null;
+        ClearKeyboardFocus();
+    }
+
     internal void OpenLookup(object subject)
     {
         if (windows.FirstOrDefault(window => window.Id == LookupWindow.WindowId && !window.IsValid) is { } stale)
-        {
-            windows.Remove(stale);
-            stale.Close();
-        }
+            CloseWindow(stale);
         Open(LookupWindow.WindowId, () => new LookupWindow(lookupAnything));
-        ((LookupWindow)windows.Last()).ShowPage(subject);
+        if (windows.FirstOrDefault(window => window.Id == LookupWindow.WindowId) is LookupWindow lookup)
+            lookup.ShowPage(subject);
     }
 
     internal void CloseAll()
@@ -221,6 +424,7 @@ internal sealed class WindowManager
         foreach (OsWindow window in windows)
             window.Close();
         windows.Clear();
+        tabGroups.Clear();
     }
 
     internal bool IsContextMenuOpen => contextMenu.IsOpen;
@@ -229,14 +433,15 @@ internal sealed class WindowManager
 
     // Focus, not visibility, owns the pause. Background windows can stay open while playing.
     internal bool HasDesktopFocus => isVisible() && !Game1.IsChatting
-        && (contextMenu.IsOpen || HasPendingTransfer || draggedWindow != null || resizedWindow != null
+        && (contextMenu.IsOpen || HasPendingTransfer || draggedWindow != null || draggedGroup != null
+            || resizedWindow != null || resizedGroup != null
             || contentDragWindow != null || itemDragSource != null
             || (focusedWindow is { IsValid: true, IsMinimized: false } focused && windows.Contains(focused)));
 
     internal void FocusWorld()
     {
-        if (HasPendingTransfer || itemDragSource != null || draggedWindow != null || resizedWindow != null
-            || contentDragWindow != null)
+        if (HasPendingTransfer || itemDragSource != null || draggedWindow != null || draggedGroup != null
+            || resizedWindow != null || resizedGroup != null || contentDragWindow != null)
             return;
         focusedWindow = null;
         ClearKeyboardFocus();
@@ -263,8 +468,17 @@ internal sealed class WindowManager
         OsWindow? window = GetWindowAt(cursor);
         if (window == null)
             return CanReceiveInput && (HasPendingTransfer || itemDragSource != null || draggedWindow != null
-                || resizedWindow != null || contentDragWindow != null);
+                || draggedGroup != null || resizedWindow != null || resizedGroup != null || contentDragWindow != null);
         ClearKeyboardFocus();
+        WindowTabGroup? group = FindGroup(window);
+        if (group != null)
+        {
+            if (leftClick)
+                return ReceiveGroupLeftClick(group, window, cursor, input);
+            else
+                return ReceiveGroupRightClick(group, window, cursor);
+        }
+
         focusedWindow = window;
 
         if (leftClick)
@@ -274,17 +488,15 @@ internal sealed class WindowManager
             windows.Add(window);
             if (window.CloseBounds.Contains(cursor))
             {
-                RememberPlacement(window);
-                windows.Remove(window);
-                window.Close();
-                focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
+                CloseWindow(window);
+                focusedWindow = GetFrontmostActive();
                 EndDrag();
             }
             else if (window.MinimizeBounds.Contains(cursor))
             {
                 RememberPlacement(window);
                 window.IsMinimized = true;
-                focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
+                focusedWindow = GetFrontmostActive();
                 EndDrag();
             }
             else if (window.GetResizeEdges(cursor) is var edges && edges != WindowResizeEdges.None)
@@ -308,19 +520,8 @@ internal sealed class WindowManager
                     keyboardDispatcher = Game1.keyboardDispatcher;
                 }
                 contentDragWindow = window;
-                if (window is InventoryWindow inventory && !HasPendingTransfer)
-                {
-                    bool control = IsHeld(input, SButton.LeftControl) || IsHeld(input, SButton.RightControl);
-                    bool shift = IsHeld(input, SButton.LeftShift) || IsHeld(input, SButton.RightShift);
-                    pressedItem = inventory.SelectRow(cursor, control, shift);
-                    if (pressedItem != null)
-                    {
-                        itemDragSource = inventory;
-                        draggedItems = inventory.SelectedItems;
-                        itemDragStart = cursor;
-                        collapseSelectionOnRelease = !control && !shift;
-                    }
-                }
+                if (!HasPendingTransfer)
+                    BeginItemDrag(window, cursor, input);
             }
         }
         else
@@ -338,6 +539,173 @@ internal sealed class WindowManager
         RememberOpenWindows();
         // Suppress the whole press (including held repeats) before native HUD/world dispatch.
         return true;
+    }
+
+    private OsWindow? GetFrontmostActive()
+    {
+        for (int i = windows.Count - 1; i >= 0; i--)
+        {
+            OsWindow candidate = windows[i];
+            if (!candidate.IsValid || candidate.IsMinimized)
+                continue;
+            WindowTabGroup? candidateGroup = FindGroup(candidate);
+            if (candidateGroup != null)
+            {
+                if (ReferenceEquals(candidateGroup.Active, candidate))
+                    return candidate;
+                continue;
+            }
+            return candidate;
+        }
+        return null;
+    }
+
+    private bool ReceiveGroupLeftClick(WindowTabGroup group, OsWindow window, Point cursor, IInputHelper input)
+    {
+        EndDrag();
+        // The press identifies the frame; tab selection decides the active member.
+        OsWindow? pressedTab = group.GetTabAt(cursor) ?? (group.TitleBounds.Contains(cursor) ? group.Active : null);
+        if (pressedTab != null && !ReferenceEquals(pressedTab, group.Active))
+        {
+            group.SetActive(pressedTab);
+            window = pressedTab;
+            RememberTabGroups();
+        }
+        BringGroupToFront(group);
+        focusedWindow = group.Active;
+
+        if (group.CloseBounds.Contains(cursor))
+        {
+            CloseGroup(group);
+            focusedWindow = GetFrontmostActive();
+            EndDrag();
+        }
+        else if (group.MinimizeBounds.Contains(cursor))
+        {
+            RememberGroupPlacement(group);
+            foreach (OsWindow member in group.Tabs)
+                member.IsMinimized = true;
+            focusedWindow = GetFrontmostActive();
+            EndDrag();
+        }
+        else if (group.GetResizeEdges(cursor) is var edges && edges != WindowResizeEdges.None)
+        {
+            resizedGroup = group;
+            group.ActiveResizeEdges = edges;
+            resizeStartCursor = cursor;
+            resizeStartBounds = group.Bounds;
+        }
+        else if (group.TitleBounds.Contains(cursor))
+        {
+            bool detachModifier = IsHeld(input, SButton.LeftShift) || IsHeld(input, SButton.RightShift);
+            OsWindow tab = pressedTab ?? group.Active;
+            if (detachModifier && group.Tabs.Count > 1)
+            {
+                DetachTab(group, tab, cursor);
+                // Continue dragging the detached window from the same cursor offset.
+                draggedWindow = tab;
+                dragOffset = cursor - tab.Bounds.Location;
+                focusedWindow = tab;
+            }
+            else
+            {
+                draggedGroup = group;
+                dragOffset = cursor - group.Bounds.Location;
+            }
+        }
+        else
+        {
+            OsWindow active = group.Active;
+            active.ReceiveContentClick(cursor, leftClick: true);
+            if (active.KeyboardSubscriber?.Selected == true)
+            {
+                keyboardWindow = active;
+                keyboardDispatcher = Game1.keyboardDispatcher;
+            }
+            contentDragWindow = active;
+            if (!HasPendingTransfer)
+                BeginItemDrag(active, cursor, input);
+            focusedWindow = active;
+        }
+        RememberOpenWindows();
+        RememberTabGroups();
+        return true;
+    }
+
+    private bool ReceiveGroupRightClick(WindowTabGroup group, OsWindow window, Point cursor)
+    {
+        if (group.TitleBounds.Contains(cursor))
+        {
+            OsWindow tab = group.GetTabAt(cursor) ?? group.Active;
+            OsWindow capturedTab = tab;
+            WindowTabGroup capturedGroup = group;
+            string title;
+            try { title = tab.Title; }
+            catch { title = "Tab"; }
+            var items = new List<ContextMenuItem>();
+            if (group.Tabs.Count > 1)
+            {
+                items.Add(new ContextMenuItem("Detach tab", () => DetachTab(capturedGroup, capturedTab, null)));
+                items.Add(new ContextMenuItem("Close tab", () =>
+                {
+                    CloseWindow(capturedTab);
+                    RememberOpenWindows();
+                    RememberTabGroups();
+                }));
+            }
+            items.Add(new ContextMenuItem("Close window", () =>
+            {
+                if (tabGroups.Contains(capturedGroup))
+                    CloseGroup(capturedGroup);
+                RememberOpenWindows();
+                RememberTabGroups();
+            }));
+            ShowContextMenu(cursor, items.ToArray(), title: title,
+                isValid: () => capturedTab.IsValid && windows.Contains(capturedTab) && tabGroups.Contains(capturedGroup)
+                    && capturedGroup.Contains(capturedTab));
+            RememberOpenWindows();
+            return true;
+        }
+
+        OsWindow active = group.Active;
+        focusedWindow = active;
+        ContextMenuItem[]? contentItems = active.GetContextMenuItems(cursor);
+        if (contentItems != null)
+        {
+            ContextMenuInfo? info = active.GetContextMenuInfo(cursor);
+            ShowContextMenu(cursor, contentItems, isValid: () => active.IsValid && !active.IsMinimized
+                && windows.Contains(active) && (info?.IsValid() ?? true), info: info);
+        }
+        else
+            active.ReceiveContentClick(cursor, leftClick: false);
+        RememberOpenWindows();
+        return true;
+    }
+
+    private void DetachTab(WindowTabGroup group, OsWindow tab, Point? cursor)
+    {
+        if (!group.Contains(tab) || group.Tabs.Count < 2)
+            return;
+        group.RemoveTab(tab);
+        DissolveGroupIfSingle(group);
+        // Keep the detached window where the group was, nudged so the frame is visible.
+        WindowPlacement? placement = group.GetPlacement();
+        Point origin = placement != null ? new Point(placement.X, placement.Y) : tab.Bounds.Location;
+        Point dimensions = placement != null ? new Point(placement.Width, placement.Height) : tab.Bounds.Size;
+        if (dimensions.X <= 0 || dimensions.Y <= 0)
+            dimensions = tab.DefaultSize;
+        Point offset = new(origin.X + 24, origin.Y + 24);
+        if (cursor.HasValue)
+            offset = cursor.Value - new Point(Math.Min(120, dimensions.X / 2), 12);
+        tab.RestorePlacement(new WindowPlacement { X = offset.X, Y = offset.Y, Width = dimensions.X, Height = dimensions.Y });
+        windows.Remove(tab);
+        windows.Add(tab);
+        tab.IsMinimized = false;
+        focusedWindow = tab;
+        RememberPlacement(tab);
+        RememberGroupPlacement(group);
+        RememberOpenWindows();
+        RememberTabGroups();
     }
 
     internal bool ReceiveScroll(Point cursor, int delta)
@@ -372,10 +740,16 @@ internal sealed class WindowManager
         // Keep the gesture's direction when the pointer leaves the edge or hits a size limit.
         if (resizedWindow is { IsValid: true, IsMinimized: false } resizing && windows.Contains(resizing))
             return resizing.ActiveResizeEdges;
-        if (draggedWindow != null || contentDragWindow != null || itemDragSource != null)
+        if (resizedGroup is { } resizingGroup && resizingGroup.Tabs.All(member => member.IsValid && !member.IsMinimized))
+            return resizingGroup.ActiveResizeEdges;
+        if (draggedWindow != null || draggedGroup != null || contentDragWindow != null || itemDragSource != null)
             return WindowResizeEdges.None;
         // Match click dispatch: covered windows must never supply a resize cursor.
-        return GetWindowAt(cursor)?.GetResizeEdges(cursor) ?? WindowResizeEdges.None;
+        OsWindow? hovered = GetWindowAt(cursor);
+        if (hovered == null)
+            return WindowResizeEdges.None;
+        WindowTabGroup? hoveredGroup = FindGroup(hovered);
+        return hoveredGroup != null ? hoveredGroup.GetResizeEdges(cursor) : hovered.GetResizeEdges(cursor);
     }
 
     internal void Update(IInputHelper input)
@@ -386,20 +760,47 @@ internal sealed class WindowManager
         foreach (OsWindow window in windows.Where(window => !window.IsValid).ToArray())
         {
             CancelPendingTransfer();
+            if (window is TradeWindow)
+                pendingBuys.Clear();
             EndDrag();
+            WindowTabGroup? invalidGroup = FindGroup(window);
+            if (invalidGroup != null)
+            {
+                invalidGroup.RemoveTab(window);
+                DissolveGroupIfSingle(invalidGroup);
+            }
             RememberPlacement(window);
             windows.Remove(window);
             window.Close();
             if (ReferenceEquals(focusedWindow, window))
-                focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
+                focusedWindow = GetFrontmostActive();
+            if (ReferenceEquals(keyboardWindow, window))
+                ClearKeyboardFocus();
             removedInvalid = true;
         }
+        // Drop single-member groups left by invalid members.
+        foreach (WindowTabGroup group in tabGroups.ToArray())
+        {
+            group.Tabs.RemoveAll(member => !windows.Contains(member) || !member.IsValid);
+            if (group.Tabs.Count == 0)
+                tabGroups.Remove(group);
+            else
+            {
+                if (!group.Tabs.Contains(group.Active))
+                    group.SetActive(group.Tabs[0]);
+                DissolveGroupIfSingle(group);
+            }
+        }
         if (removedInvalid)
+        {
             RememberOpenWindows();
+            RememberTabGroups();
+        }
         contextMenu.Update();
         if (!CanReceiveInput)
             contextMenu.Close();
         RefreshKeyboardFocus();
+        ProcessBuyQueue();
         // Suppression reports the button released to the game on subsequent ticks.
         // SMAPI retains the suppression flag until the physical button is released.
         bool leftButtonHeld = IsHeld(input, SButton.MouseLeft);
@@ -415,6 +816,7 @@ internal sealed class WindowManager
         if (!leftButtonHeld)
         {
             FinishItemDrag(cursor);
+            FinishWindowDrag(cursor);
             EndDrag();
             return;
         }
@@ -422,7 +824,10 @@ internal sealed class WindowManager
             itemDragActive |= Math.Abs(cursor.X - itemDragStart.X) >= 5 || Math.Abs(cursor.Y - itemDragStart.Y) >= 5;
         if (draggedWindow != null)
             draggedWindow.MoveTo(cursor - dragOffset);
+        if (draggedGroup != null)
+            draggedGroup.MoveTo(cursor - dragOffset);
         resizedWindow?.ResizeFrom(resizeStartBounds, cursor - resizeStartCursor, resizedWindow.ActiveResizeEdges);
+        resizedGroup?.ResizeFrom(resizeStartBounds, cursor - resizeStartCursor, resizedGroup.ActiveResizeEdges);
         contentDragWindow?.DragContent(cursor);
     }
 
@@ -430,38 +835,249 @@ internal sealed class WindowManager
     {
         if (draggedWindow != null)
             RememberPlacement(draggedWindow);
+        if (draggedGroup != null)
+            RememberGroupPlacement(draggedGroup);
         if (resizedWindow != null)
             RememberPlacement(resizedWindow);
+        if (resizedGroup != null)
+            RememberGroupPlacement(resizedGroup);
         draggedWindow = null;
+        draggedGroup = null;
         if (resizedWindow != null)
             resizedWindow.ActiveResizeEdges = WindowResizeEdges.None;
         resizedWindow = null;
+        if (resizedGroup != null)
+            resizedGroup.ActiveResizeEdges = WindowResizeEdges.None;
+        resizedGroup = null;
         contentDragWindow?.EndContentDrag();
         contentDragWindow = null;
         itemDragSource = null;
-        draggedItems = Array.Empty<Item>();
+        draggedItems = Array.Empty<ISalable>();
         pressedItem = null;
         itemDragActive = false;
         collapseSelectionOnRelease = false;
     }
 
+    private void BeginItemDrag(OsWindow window, Point cursor, IInputHelper input)
+    {
+        bool control = IsHeld(input, SButton.LeftControl) || IsHeld(input, SButton.RightControl);
+        bool shift = IsHeld(input, SButton.LeftShift) || IsHeld(input, SButton.RightShift);
+        if (window is InventoryWindow inventory && !HasPendingTransfer)
+        {
+            pressedItem = inventory.SelectRow(cursor, control, shift);
+            if (pressedItem != null)
+            {
+                itemDragSource = inventory;
+                draggedItems = inventory.SelectedItems;
+                itemDragStart = cursor;
+                collapseSelectionOnRelease = !control && !shift;
+            }
+        }
+        else if (window is TradeWindow trade && !HasPendingTransfer)
+        {
+            pressedItem = trade.SelectRow(cursor, control, shift);
+            if (pressedItem != null)
+            {
+                itemDragSource = trade;
+                draggedItems = trade.SelectedItems;
+                itemDragStart = cursor;
+                collapseSelectionOnRelease = !control && !shift;
+            }
+        }
+    }
+
     private static bool IsHeld(IInputHelper input, SButton button) => input.IsDown(button) || input.IsSuppressed(button);
+
+    private void FinishWindowDrag(Point cursor)
+    {
+        try
+        {
+            if (draggedWindow != null)
+            {
+                if (FindDropTarget(cursor, draggedWindow, null) is { } target)
+                    DockWindow(draggedWindow, target);
+            }
+            else if (draggedGroup != null)
+            {
+                if (FindDropTarget(cursor, null, draggedGroup) is { } target)
+                    DockGroup(draggedGroup, target);
+            }
+        }
+        catch { }
+    }
+
+    // Titles onto each other: the release cursor must land in another frame's title strip.
+    private object? FindDropTarget(Point cursor, OsWindow? draggedSingle, WindowTabGroup? draggedGroup)
+    {
+        var candidates = new List<(int Index, object Frame)>();
+        foreach (OsWindow window in windows)
+        {
+            if (!window.IsValid || window.IsMinimized || !windows.Contains(window))
+                continue;
+            if (draggedSingle != null && ReferenceEquals(window, draggedSingle))
+                continue;
+            if (draggedGroup != null && draggedGroup.Contains(window))
+                continue;
+            WindowTabGroup? group = FindGroup(window);
+            if (group != null)
+            {
+                // Only consider the group once, at its frontmost member.
+                if (!ReferenceEquals(window, group.Tabs.Where(member => windows.Contains(member))
+                        .OrderByDescending(member => windows.IndexOf(member)).FirstOrDefault()))
+                    continue;
+                if (group.Bounds.IsEmpty || !group.TitleBounds.Contains(cursor))
+                    continue;
+                int index = group.Tabs.Where(member => windows.Contains(member))
+                    .Select(member => windows.IndexOf(member)).DefaultIfEmpty(-1).Max();
+                candidates.Add((index, group));
+            }
+            else
+            {
+                if (window.Bounds.IsEmpty || !window.TitleBounds.Contains(cursor))
+                    continue;
+                candidates.Add((windows.IndexOf(window), window));
+            }
+        }
+        if (candidates.Count == 0)
+            return null;
+        candidates.Sort((a, b) => b.Index.CompareTo(a.Index));
+        return candidates[0].Frame;
+    }
+
+    private void DockWindow(OsWindow dragged, object target)
+    {
+        if (!dragged.IsValid || !windows.Contains(dragged) || dragged.IsMinimized)
+            return;
+        ClearKeyboardFocus();
+        if (target is WindowTabGroup targetGroup)
+        {
+            if (targetGroup.Contains(dragged) || !targetGroup.Tabs.All(member => member.IsValid))
+                return;
+            WindowPlacement? placement = targetGroup.GetPlacement() ?? dragged.GetPlacement();
+            targetGroup.AddTab(dragged);
+            targetGroup.SetActive(dragged);
+            if (placement != null)
+                targetGroup.InitFromPlacement(placement);
+            BringGroupToFront(targetGroup);
+            focusedWindow = dragged;
+            RememberGroupPlacement(targetGroup);
+        }
+        else if (target is OsWindow targetWindow)
+        {
+            if (ReferenceEquals(targetWindow, dragged) || !targetWindow.IsValid || targetWindow.IsMinimized)
+                return;
+            if (FindGroup(targetWindow) != null || FindGroup(dragged) != null)
+                return;
+            WindowPlacement? placement = targetWindow.GetPlacement() ?? dragged.GetPlacement()
+                ?? new WindowPlacement { X = targetWindow.Bounds.X, Y = targetWindow.Bounds.Y, Width = targetWindow.Bounds.Width, Height = targetWindow.Bounds.Height };
+            var group = new WindowTabGroup(new[] { targetWindow, dragged }, dragged, placement);
+            foreach (OsWindow member in group.Tabs)
+                member.RestorePlacement(placement);
+            tabGroups.Add(group);
+            BringGroupToFront(group);
+            focusedWindow = dragged;
+            RememberGroupPlacement(group);
+        }
+        else
+            return;
+        RememberOpenWindows();
+        RememberTabGroups();
+    }
+
+    private void DockGroup(WindowTabGroup dragged, object target)
+    {
+        if (dragged.Tabs.Count == 0 || dragged.Tabs.Any(member => !member.IsValid || !windows.Contains(member)))
+            return;
+        ClearKeyboardFocus();
+        if (target is WindowTabGroup targetGroup)
+        {
+            if (ReferenceEquals(targetGroup, dragged))
+                return;
+            WindowPlacement? placement = targetGroup.GetPlacement() ?? dragged.GetPlacement();
+            foreach (OsWindow member in dragged.Tabs.ToArray())
+            {
+                if (!targetGroup.Contains(member))
+                    targetGroup.AddTab(member);
+            }
+            targetGroup.SetActive(dragged.Active);
+            tabGroups.Remove(dragged);
+            if (placement != null)
+                targetGroup.InitFromPlacement(placement);
+            BringGroupToFront(targetGroup);
+            focusedWindow = targetGroup.Active;
+            RememberGroupPlacement(targetGroup);
+        }
+        else if (target is OsWindow targetWindow)
+        {
+            if (dragged.Contains(targetWindow))
+                return;
+            WindowTabGroup? existing = FindGroup(targetWindow);
+            if (existing != null)
+            {
+                DockGroup(dragged, existing);
+                return;
+            }
+            WindowPlacement? placement = targetWindow.GetPlacement() ?? dragged.GetPlacement();
+            var members = new List<OsWindow> { targetWindow };
+            members.AddRange(dragged.Tabs.Where(member => !ReferenceEquals(member, targetWindow)));
+            var group = new WindowTabGroup(members, dragged.Active, placement
+                ?? new WindowPlacement { X = targetWindow.Bounds.X, Y = targetWindow.Bounds.Y, Width = targetWindow.Bounds.Width, Height = targetWindow.Bounds.Height });
+            foreach (OsWindow member in group.Tabs)
+                member.RestorePlacement(group.GetPlacement() ?? placement
+                    ?? new WindowPlacement { X = targetWindow.Bounds.X, Y = targetWindow.Bounds.Y, Width = targetWindow.Bounds.Width, Height = targetWindow.Bounds.Height });
+            tabGroups.Remove(dragged);
+            tabGroups.Add(group);
+            BringGroupToFront(group);
+            focusedWindow = group.Active;
+            RememberGroupPlacement(group);
+        }
+        else
+            return;
+        RememberOpenWindows();
+        RememberTabGroups();
+    }
 
     private InventoryWindow? GetInventoryDropTarget(Point cursor)
     {
-        if (itemDragSource == null || !itemDragSource.IsValid || HasPendingTransfer
+        if (itemDragSource is not InventoryWindow source || !source.IsValid || HasPendingTransfer
             || !Context.IsPlayerFree || GetWindowAt(cursor) is not InventoryWindow target
             || ReferenceEquals(target, itemDragSource) || !target.ContainsDropPoint(cursor)
-            || (itemDragSource.Chest == null) == (target.Chest == null))
+            || (source.Chest == null) == (target.Chest == null))
             return null;
-        Chest chest = (itemDragSource.Chest ?? target.Chest)!;
+        Chest chest = (source.Chest ?? target.Chest)!;
         return Utility.tileWithinRadiusOfPlayer((int)chest.TileLocation.X, (int)chest.TileLocation.Y, 1, Game1.player)
             ? target : null;
     }
 
+    private TradeWindow? GetTradeSellTarget(Point cursor)
+    {
+        if (itemDragSource is not InventoryWindow source || !source.IsValid || HasPendingTransfer
+            || !Context.IsPlayerFree || draggedItems.Length == 0)
+            return null;
+        if (source.Chest != null)
+            return null;
+        if (GetWindowAt(cursor) is not TradeWindow target || !target.IsValid
+            || !target.ContainsDropPoint(cursor) || target.Shop == null)
+            return null;
+        return target;
+    }
+
+    private InventoryWindow? GetTradeBuyTarget(Point cursor)
+    {
+        if (itemDragSource is not TradeWindow source || !source.IsValid || HasPendingTransfer
+            || !Context.IsPlayerFree || draggedItems.Length == 0)
+            return null;
+        if (source.Shop == null)
+            return null;
+        if (GetWindowAt(cursor) is not InventoryWindow target || !target.IsValid
+            || target.Chest != null || !target.ContainsDropPoint(cursor))
+            return null;
+        return target;
+    }
+
     private Item? GetMergeTargetItem(Point cursor)
     {
-        if (itemDragSource == null || !itemDragSource.IsValid || HasPendingTransfer
+        if (itemDragSource is not InventoryWindow source || !source.IsValid || HasPendingTransfer
             || !Context.IsPlayerFree || draggedItems.Length == 0)
             return null;
         if (GetWindowAt(cursor) is not InventoryWindow hovered || !ReferenceEquals(hovered, itemDragSource))
@@ -470,12 +1086,14 @@ internal sealed class WindowManager
         if (target == null || draggedItems.Any(dragged => ReferenceEquals(dragged, target)))
             return null;
         // Ignore stale rows whose stack was removed since the last render.
-        var liveItems = (itemDragSource.Chest?.GetItemsForPlayer() ?? Game1.player.Items)
+        var liveItems = (source.Chest?.GetItemsForPlayer() ?? Game1.player.Items)
             .Where(item => item != null).ToArray();
         if (!liveItems.Any(current => ReferenceEquals(current, target)))
             return null;
-        foreach (Item dragged in draggedItems)
+        foreach (ISalable draggedSalable in draggedItems)
         {
+            if (draggedSalable is not Item dragged)
+                continue;
             if (ReferenceEquals(dragged, target) || dragged.Stack <= 0)
                 continue;
             if (!liveItems.Any(current => ReferenceEquals(current, dragged)))
@@ -493,13 +1111,26 @@ internal sealed class WindowManager
         itemDragActive |= Math.Abs(cursor.X - itemDragStart.X) >= 5 || Math.Abs(cursor.Y - itemDragStart.Y) >= 5;
         if (itemDragActive)
         {
-            if (GetInventoryDropTarget(cursor) is { } target)
-                TransferItems(itemDragSource, target, draggedItems);
-            else if (GetMergeTargetItem(cursor) is { } mergeTarget)
-                MergeStacks(itemDragSource, mergeTarget, draggedItems);
+            if (GetInventoryDropTarget(cursor) is { } chestTarget
+                && itemDragSource is InventoryWindow chestSource)
+                TransferItems(chestSource, chestTarget, draggedItems.OfType<Item>().ToArray());
+            else if (GetTradeSellTarget(cursor) is { } sellTarget
+                && itemDragSource is InventoryWindow sellSource)
+                SellDraggedItems(sellSource, sellTarget, draggedItems.OfType<Item>().ToArray());
+            else if (GetTradeBuyTarget(cursor) is not null
+                && itemDragSource is TradeWindow)
+                EnqueueBuys(draggedItems.ToArray());
+            else if (GetMergeTargetItem(cursor) is { } mergeTarget
+                && itemDragSource is InventoryWindow mergeSource)
+                MergeStacks(mergeSource, mergeTarget, draggedItems.OfType<Item>().ToArray());
         }
         else if (collapseSelectionOnRelease && pressedItem != null)
-            itemDragSource.CollapseSelection(pressedItem);
+        {
+            if (itemDragSource is InventoryWindow inventory && pressedItem is Item item)
+                inventory.CollapseSelection(item);
+            else if (itemDragSource is TradeWindow trade)
+                trade.CollapseSelection(pressedItem);
+        }
     }
 
     private void CancelPendingTransfer()
@@ -732,6 +1363,131 @@ internal sealed class WindowManager
         }
     }
 
+    private void SellDraggedItems(InventoryWindow source, TradeWindow target, Item[] requested)
+    {
+        ShopMenu? shop = target.Shop;
+        if (shop == null || !source.IsValid || !target.IsValid || !Context.IsPlayerFree)
+            return;
+        Farmer farmer = Game1.player;
+        var live = requested.Where(item => InventoryTransferBatch.IndexOf(farmer.Items, item) >= 0).ToArray();
+        if (live.Length == 0)
+        {
+            source.TransferStatus = target.TransferStatus = "That stack is no longer available.";
+            return;
+        }
+        foreach (Item item in live)
+        {
+            if (!TradeActions.CanSell(shop, item))
+            {
+                source.TransferStatus = target.TransferStatus = $"The shop won't buy {item.DisplayName}.";
+                return;
+            }
+        }
+        string? lastStatus = null;
+        foreach (Item item in live)
+            lastStatus = TradeActions.Sell(shop, item).Status;
+        source.TransferStatus = target.TransferStatus = live.Length == 1 ? lastStatus : $"Sold {live.Length} stacks.";
+    }
+
+    internal void EnqueueBuys(ISalable[] requested)
+    {
+        TradeWindow? trade = GetTradeWindow();
+        ShopMenu? shop = trade?.Shop;
+        if (trade == null || shop == null || !trade.IsValid || requested.Length == 0)
+            return;
+        if (!Context.IsPlayerFree && Game1.activeClickableMenu is not NumberEntryMenu)
+            return;
+        foreach (ISalable salable in requested)
+        {
+            if (!shop.forSale.Any(current => ReferenceEquals(current, salable)))
+                continue;
+            bool stackable;
+            try { stackable = salable.maximumStackSize() > 1; }
+            catch { stackable = false; }
+            if (!stackable)
+            {
+                var result = TradeActions.Buy(shop, salable, 1);
+                trade.TransferStatus = result.Error ?? result.Status;
+                if (result.ShouldClose)
+                {
+                    pendingBuys.Clear();
+                    CloseTrade();
+                    return;
+                }
+            }
+            else if (!pendingBuys.Any(queued => ReferenceEquals(queued, salable)))
+                pendingBuys.Enqueue(salable);
+        }
+        ProcessBuyQueue();
+    }
+
+    private void ProcessBuyQueue()
+    {
+        if (Game1.activeClickableMenu != null || pendingBuys.Count == 0)
+            return;
+        if (!Context.IsWorldReady)
+        {
+            pendingBuys.Clear();
+            return;
+        }
+        TradeWindow? trade = GetTradeWindow();
+        ShopMenu? shop = trade?.Shop;
+        if (trade == null || shop == null || !trade.IsValid || !windows.Contains(trade))
+        {
+            pendingBuys.Clear();
+            return;
+        }
+        ISalable salable = pendingBuys.Dequeue();
+        if (!shop.forSale.Any(current => ReferenceEquals(current, salable)))
+        {
+            trade.TransferStatus = "That item is no longer for sale.";
+            ProcessBuyQueue();
+            return;
+        }
+        Farmer farmer = Game1.player;
+        int max = TradeActions.GetMaxBuyable(shop, farmer, salable);
+        if (max <= 0)
+        {
+            trade.TransferStatus = TradeActions.GetCurrencyAmount(farmer, shop.currency) < (shop.itemPriceAndStock.TryGetValue(salable, out var stock) ? stock.Price : 0)
+                ? "Not enough funds." : "Out of stock.";
+            ProcessBuyQueue();
+            return;
+        }
+        string unitPrice = TradeActions.PriceText(shop, salable);
+        string suffix = TradeActions.CurrencySuffix(shop.currency);
+        string title = $"Buy {salable.DisplayName}";
+        string PricePrompt()
+        {
+            int liveBalance = TradeActions.GetCurrencyAmount(Game1.player, shop.currency);
+            int liveMax = TradeActions.GetMaxBuyable(shop, Game1.player, salable);
+            return $"{unitPrice} each (You have {liveBalance} {suffix}) - Qty 1-{liveMax}".Trim();
+        }
+        TradeWindow capturedTrade = trade;
+        ShopMenu capturedShop = shop;
+        ISalable capturedItem = salable;
+        bool IsCurrent() => Context.IsWorldReady && capturedTrade.IsValid && !capturedTrade.IsMinimized
+            && windows.Contains(capturedTrade) && ReferenceEquals(capturedTrade.Shop, capturedShop)
+            && capturedShop.forSale.Any(current => ReferenceEquals(current, capturedItem));
+        Game1.activeClickableMenu = new NumberEntryMenu(config, title, PricePrompt, amount =>
+        {
+            if (!IsCurrent())
+                return "Shop closed.";
+            int currentMax = TradeActions.GetMaxBuyable(capturedShop, Game1.player, capturedItem);
+            if (amount < 1 || amount > currentMax)
+                return $"Enter a number from 1 to {Math.Max(1, currentMax)}.";
+            var result = TradeActions.Buy(capturedShop, capturedItem, amount);
+            if (result.Error != null)
+                return result.Error;
+            capturedTrade.TransferStatus = result.Status;
+            if (result.ShouldClose)
+            {
+                pendingBuys.Clear();
+                CloseTrade();
+            }
+            return null;
+        }, IsCurrent, confirmLabel: "Buy");
+    }
+
     private void RememberPlacement(OsWindow window)
     {
         WindowPlacement? placement = window.GetPlacement();
@@ -750,6 +1506,8 @@ internal sealed class WindowManager
         contextMenu.Close();
         ClearKeyboardFocus();
         drawnWindows.Clear();
+        foreach (WindowTabGroup group in tabGroups)
+            group.ClearDrawnTabs();
         EndDrag();
     }
 
@@ -777,23 +1535,81 @@ internal sealed class WindowManager
                     Game1.smallFont.MeasureString(window.TitleSubtext).Y));
             int titleHeight = Math.Max(27, (int)MathF.Ceiling(titleTextHeight * config.FontScale)) + 6;
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+            // Frames back-to-front: ungrouped windows by index, groups by frontmost member.
+            var frames = new List<(int Index, object Frame)>();
             foreach (OsWindow window in windows)
             {
-                if (window.IsValid && !window.IsMinimized && window.Layout(workArea, titleHeight, config))
+                if (!window.IsValid || window.IsMinimized)
+                    continue;
+                WindowTabGroup? group = FindGroup(window);
+                if (group != null)
                 {
-                    window.Draw(batch, config, cursor);
-                    drawnWindows.Add(window);
+                    // Emit the group once at its frontmost member.
+                    OsWindow? last = group.Tabs.Where(member => windows.Contains(member) && member.IsValid && !member.IsMinimized)
+                        .OrderByDescending(member => windows.IndexOf(member)).FirstOrDefault();
+                    if (!ReferenceEquals(window, last))
+                        continue;
+                    if (group.Tabs.Count < 2)
+                        continue;
+                    int index = group.Tabs.Where(member => windows.Contains(member))
+                        .Select(member => windows.IndexOf(member)).DefaultIfEmpty(-1).Max();
+                    frames.Add((index, group));
                 }
+                else
+                    frames.Add((windows.IndexOf(window), window));
+            }
+            frames.Sort((a, b) => a.Index.CompareTo(b.Index));
+            var drawnGroups = new HashSet<WindowTabGroup>();
+            foreach (var frame in frames)
+            {
+                if (frame.Frame is WindowTabGroup group)
+                {
+                    if (!drawnGroups.Add(group) || group.Tabs.Count < 2)
+                        continue;
+                    if (group.Tabs.Any(member => !member.IsValid || member.IsMinimized || !windows.Contains(member)))
+                        continue;
+                    if (group.Layout(workArea, titleHeight, config))
+                    {
+                        group.Draw(batch, config, cursor);
+                        if (group.Active.IsValid && !group.Active.IsMinimized && windows.Contains(group.Active))
+                            drawnWindows.Add(group.Active);
+                    }
+                }
+                else if (frame.Frame is OsWindow window)
+                {
+                    if (window.IsValid && !window.IsMinimized && window.Layout(workArea, titleHeight, config))
+                    {
+                        window.Draw(batch, config, cursor);
+                        drawnWindows.Add(window);
+                    }
+                }
+            }
+            // Prune groups that lost members without a click (e.g. failed restores).
+            foreach (WindowTabGroup group in tabGroups.ToArray())
+            {
+                group.Tabs.RemoveAll(member => !windows.Contains(member));
+                if (group.Tabs.Count < 2)
+                    tabGroups.Remove(group);
             }
             if (itemDragActive && itemDragSource != null)
             {
-                InventoryWindow? dropTarget = GetInventoryDropTarget(cursor);
-                Item? mergeTarget = dropTarget == null ? GetMergeTargetItem(cursor) : null;
-                Rectangle? mergeRow = mergeTarget != null ? itemDragSource.GetRowBoundsAt(cursor) : null;
-                dropTarget?.DrawDropTarget(batch, config);
-                if (mergeRow.HasValue)
-                    itemDragSource.DrawMergeTarget(batch, mergeRow.Value, config);
-                itemDragSource.DrawItemDrag(batch, cursor, draggedItems, dropTarget != null || mergeTarget != null, config);
+                InventoryWindow? chestTarget = GetInventoryDropTarget(cursor);
+                TradeWindow? sellTarget = chestTarget == null ? GetTradeSellTarget(cursor) : null;
+                InventoryWindow? buyTarget = chestTarget == null && sellTarget == null ? GetTradeBuyTarget(cursor) : null;
+                Item? mergeTarget = chestTarget == null && sellTarget == null && buyTarget == null ? GetMergeTargetItem(cursor) : null;
+                Rectangle? mergeRow = null;
+                if (mergeTarget != null && itemDragSource is InventoryWindow mergeSource)
+                    mergeRow = mergeSource.GetRowBoundsAt(cursor);
+                chestTarget?.DrawDropTarget(batch, config);
+                sellTarget?.DrawDropTarget(batch, config);
+                buyTarget?.DrawDropTarget(batch, config);
+                if (mergeRow.HasValue && itemDragSource is InventoryWindow mergeHighlight)
+                    mergeHighlight.DrawMergeTarget(batch, mergeRow.Value, config);
+                bool valid = chestTarget != null || sellTarget != null || buyTarget != null || mergeTarget != null;
+                if (itemDragSource is InventoryWindow dragInventory)
+                    dragInventory.DrawItemDrag(batch, cursor, draggedItems.OfType<Item>().ToArray(), valid, config);
+                else if (itemDragSource is TradeWindow dragTrade)
+                    dragTrade.DrawItemDrag(batch, cursor, draggedItems, valid, config);
             }
             contextMenu.Draw(batch, config, cursor);
         }
@@ -824,7 +1640,7 @@ internal sealed class WindowManager
         IKeyboardSubscriber? subscriber = keyboardWindow.KeyboardSubscriber;
         if (!isVisible() || Game1.IsChatting || keyboardWindow.IsMinimized || keyboardWindow.Bounds.IsEmpty
             || keyboardDispatcher != Game1.keyboardDispatcher
-            || windows.LastOrDefault(window => !window.IsMinimized) != keyboardWindow
+            || !IsFrontmost(keyboardWindow)
             || (Game1.keyboardDispatcher.Subscriber != null && Game1.keyboardDispatcher.Subscriber != subscriber))
         {
             ClearKeyboardFocus();
@@ -840,12 +1656,21 @@ internal sealed class WindowManager
     {
         if (CanReceiveInput && !contextMenu.IsOpen && Game1.game1.HasKeyboardFocus()
             && button == SButton.A && (IsHeld(input, SButton.LeftControl) || IsHeld(input, SButton.RightControl))
-            && focusedWindow is InventoryWindow inventory && inventory.IsValid && !inventory.IsMinimized
-            && drawnWindows.Contains(inventory) && windows.LastOrDefault(window => !window.IsMinimized) == inventory)
+            && focusedWindow is { IsValid: true, IsMinimized: false } selectWindow
+            && drawnWindows.Contains(selectWindow) && IsFrontmost(selectWindow))
         {
-            EndDrag();
-            inventory.SelectAll();
-            return true;
+            if (selectWindow is InventoryWindow inventory)
+            {
+                EndDrag();
+                inventory.SelectAll();
+                return true;
+            }
+            if (selectWindow is TradeWindow trade)
+            {
+                EndDrag();
+                trade.SelectAll();
+                return true;
+            }
         }
         if (CanReceiveInput && button == SButton.Escape && (itemDragSource != null || HasPendingTransfer))
         {
@@ -860,7 +1685,7 @@ internal sealed class WindowManager
         }
         if (CanReceiveInput && !contextMenu.IsOpen && Game1.game1.HasKeyboardFocus()
             && focusedWindow is { IsValid: true, IsMinimized: false } focused
-            && drawnWindows.Contains(focused) && windows.LastOrDefault(window => !window.IsMinimized) == focused
+            && drawnWindows.Contains(focused) && IsFrontmost(focused)
             && focused.ReceiveShortcut(button))
             return true;
         if (!RefreshKeyboardFocus() || !Game1.game1.HasKeyboardFocus() || !button.TryGetKeyboard(out Keys key))

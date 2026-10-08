@@ -17,6 +17,7 @@ internal sealed class NumberEntryMenu : IClickableMenu
     private readonly Func<string> prompt;
     private readonly Func<int, string?> submit;
     private readonly Func<bool> isValid;
+    private readonly string confirmLabel;
     private readonly TextComposer composer;
     private readonly KeyboardDispatcher dispatcher;
     private Rectangle bounds;
@@ -26,13 +27,14 @@ internal sealed class NumberEntryMenu : IClickableMenu
     private string? error;
 
     internal NumberEntryMenu(ModConfig config, string title, Func<string> prompt,
-        Func<int, string?> submit, Func<bool> isValid) : base(0, 0, 0, 0)
+        Func<int, string?> submit, Func<bool> isValid, string confirmLabel = "Split") : base(0, 0, 0, 0)
     {
         this.config = config;
         this.title = title;
         this.prompt = prompt;
         this.submit = submit;
         this.isValid = isValid;
+        this.confirmLabel = string.IsNullOrWhiteSpace(confirmLabel) ? "Split" : confirmLabel;
         composer = new TextComposer(Submit, "Quantity...", clearOnSubmit: false);
         dispatcher = Game1.keyboardDispatcher;
         dispatcher.Subscriber = composer;
@@ -126,7 +128,7 @@ internal sealed class NumberEntryMenu : IClickableMenu
         DrawLine(batch, prompt(), bounds.Y + Padding + UiText.LineHeight(config.FontScale), UiStyle.Muted);
         composer.Draw(batch, field, config);
         DrawLine(batch, error ?? "", field.Bottom + Padding / 2, new Color(241, 155, 130));
-        DrawButton(batch, "Split", confirm, cursor, composer.CanSubmit);
+        DrawButton(batch, confirmLabel, confirm, cursor, composer.CanSubmit);
         DrawButton(batch, "Cancel", cancel, cursor, true);
         drawMouse(batch);
     }

@@ -14,7 +14,10 @@ internal sealed record QueuedStep(
     InteractRequest? Request,
     Point? Warp,
     GameLocation Location,
-    uint Day);
+    uint Day)
+{
+    internal Point? PlannedTile { get; init; }
+}
 
 internal readonly record struct QueueIndicator(Point Tile, Color Color, Character? Animal);
 
@@ -42,6 +45,8 @@ internal sealed class ClickToMove
     private ApproachTarget? target;
     private Point? warpDestination;
     private Point destination;
+    private Point routeEnd;
+    private Point? plannedInteractionTile;
     private uint day;
     private bool arrived;
     private Vector2 previousPosition;
@@ -328,6 +333,79 @@ internal sealed class ClickToMove
         return EnqueueStep(new QueuedStep(clicked, request.Move, request, null, here, Game1.stats.DaysPlayed), startImmediately);
     }
 
+    /// <summary>Append a whole overview batch in optimal walking order. Existing work
+    /// retains its order; route optimization begins at its projected final endpoint.</summary>
+    internal bool EnqueueInteractions(IReadOnlyList<InteractRequest> requests)
+    {
+        Farmer who = Game1.player;
+        GameLocation here = Game1.currentLocation;
+        if (who.controller != null && who.controller != controller || warpDestination != null)
+            return false;
+        var batch = new List<InteractRequest>();
+        foreach (InteractRequest request in requests)
+        {
+            if (!request.Valid() || !here.isTileOnMap(request.Tile()) || HasQueuedRequest(request))
+                continue;
+            if (batch.Any(other => request.Identity != null ? SameRequest(other, request)
+                : other.Tile() == request.Tile()))
+                continue;
+            batch.Add(request);
+        }
+        if (batch.Count == 0)
+            return true;
+        // Reject the whole batch rather than silently dropping selected targets.
+        if (batch.Count > MaxQueued - TotalCount)
+        {
+            Game1.playSound("cancel");
+            return false;
+        }
+        var walkable = new Dictionary<Point, bool>();
+        bool Walk(Point tile)
+        {
+            if (!walkable.TryGetValue(tile, out bool allowed))
+                walkable[tile] = allowed = CanWalkFor(here, who, tile);
+            return allowed;
+        }
+        Point start = controller != null || arrived ? routeEnd : who.TilePoint;
+        foreach (QueuedStep step in pending)
+        {
+            if (step.Location != here || step.Day != Game1.stats.DaysPlayed
+                || step.Target?.IsValid() == false || step.Request?.Valid() == false)
+                continue;
+            Point[] goals = step.Target?.InteractTiles().ToArray() ?? new[] { step.Clicked };
+            if (step.PlannedTile is { } preferred && goals.Contains(preferred) && (preferred == start || Walk(preferred)))
+                goals = new[] { preferred };
+            Stack<Point>? path = TilePathfinder.Find(start, goals.Where(tile => tile == start || Walk(tile)).ToArray(), Walk);
+            if (path != null)
+                start = path.Last();
+        }
+        var targets = batch.Select(request =>
+        {
+            IEnumerable<Point> tiles = request.Move?.InteractTiles() ?? new[] { request.Tile() };
+            Point hit = request.Tile();
+            // Already standing inside an animal's footprint is also a valid zero-cost
+            // interaction. Normal paths still use the walkable perimeter.
+            if (Math.Abs(start.X - hit.X) <= 1 && Math.Abs(start.Y - hit.Y) <= 1)
+                tiles = tiles.Append(start);
+            return (IReadOnlyCollection<Point>)tiles.Distinct().ToArray();
+        }).ToArray();
+        var route = TilePathfinder.FindRoute(start, targets, Walk);
+        if (route.Count == 0)
+        {
+            Game1.playSound("cancel");
+            return false;
+        }
+        foreach (var stop in route)
+        {
+            InteractRequest request = batch[stop.TargetIndex];
+            pending.Enqueue(new QueuedStep(request.Tile(), request.Move, request, null,
+                here, Game1.stats.DaysPlayed) { PlannedTile = stop.Tile });
+        }
+        LastDebug = $"Queued optimal batch: requested={batch.Count} reachable={route.Count} total={TotalCount}";
+        Game1.playSound("smallSelect");
+        return true;
+    }
+
     private bool EnqueueStep(QueuedStep step, bool startImmediately = true)
     {
         // Idle with no active leg: start immediately so single clicks keep the old feel.
@@ -385,7 +463,7 @@ internal sealed class ClickToMove
             && npc.GetBoundingBox().Intersects(box) && !npc.GetBoundingBox().Intersects(farmer!.GetBoundingBox()));
     }
 
-    private static bool CanWalkFor(GameLocation location, Farmer who, Point tile)
+    internal static bool CanWalkFor(GameLocation location, Farmer who, Point tile)
     {
         if (!location.isTileOnMap(tile))
             return false;
@@ -400,6 +478,11 @@ internal sealed class ClickToMove
     private bool Plan()
     {
         Point start = farmer!.TilePoint;
+        Point[] goals = target == null ? new[] { destination } : target.InteractTiles().ToArray();
+        // Moving targets or new obstacles can invalidate the snapshot's chosen side.
+        if (plannedInteractionTile is { } preferred && (!goals.Contains(preferred)
+            || preferred != start && !CanWalk(preferred)))
+            plannedInteractionTile = null;
         // Native mouse tool targeting accepts diagonals too. Already-reachable legs
         // arrive in place: a path controller would first center the farmer on a tile.
         Point? hit = interactTile?.Invoke() ?? target?.HitTile(start);
@@ -407,20 +490,27 @@ internal sealed class ClickToMove
             : target is ToolTarget tool && interactTile == null
             ? tool.CanReach(farmer)
             : hit is { } reachable && Utility.tileWithinRadiusOfPlayer(reachable.X, reachable.Y, 1, farmer);
-        if (inReach)
+        if (inReach && (plannedInteractionTile == null || plannedInteractionTile == start))
         {
             if (controller != null && farmer.controller == controller)
                 farmer.controller = null;
             controller = null;
             farmer.Halt();
             arrived = true;
+            routeEnd = start;
             stalledMilliseconds = 0;
             return true;
         }
-        Point[] goals = target == null ? new[] { destination }
-            : target.InteractTiles().ToArray();
+        if (plannedInteractionTile is { } endpoint)
+            goals = new[] { endpoint };
         goals = goals.Where(tile => tile == start || CanWalk(tile)).ToArray();
         Stack<Point>? path = TilePathfinder.Find(start, goals, CanWalk);
+        if (path == null && plannedInteractionTile != null)
+        {
+            plannedInteractionTile = null;
+            // An obstacle along the chosen route may leave another side reachable.
+            return Plan();
+        }
         if (path == null && interactTile == null)
         {
             // Unreachable tree/wall/ground clicks walk as close as possible instead of
@@ -442,6 +532,7 @@ internal sealed class ClickToMove
         if (path == null)
             return false;
         Point end = path.Last();
+        routeEnd = end;
         arrived = false;
         controller = new PathFindController(path, location!, farmer, end)
         {
@@ -489,6 +580,7 @@ internal sealed class ClickToMove
                 interactValid = step.Request.Valid;
                 interactPerform = step.Request.Perform;
                 interactRequest = step.Request;
+                plannedInteractionTile = step.PlannedTile;
                 replans = 0;
                 if (Plan())
                     return true;
@@ -905,6 +997,7 @@ internal sealed class ClickToMove
         interactValid = null;
         interactPerform = null;
         interactRequest = null;
+        plannedInteractionTile = null;
     }
 
     internal void Cancel()

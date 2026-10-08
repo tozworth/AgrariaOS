@@ -86,21 +86,9 @@ internal static class InteractProbe
         Rectangle cursorTile = new(clicked.X * 64, clicked.Y * 64, 64, 64);
         foreach (FarmAnimal animal in location.animals.Values)
         {
-            bool Valid() => Game1.currentLocation == location && !animal.wasPet.Value
-                && location.animals.Values.Any(live => ReferenceEquals(live, animal))
-                && farmer.ActiveObject?.QualifiedItemId != "(O)GoldenAnimalCracker"
-                && (Game1.timeOfDay < 1900 || animal.isMoving());
-            if (!Valid() || !animal.GetCursorPetBoundingBox().Intersects(cursorTile))
-                continue;
-            Point Tile() => animal.TilePoint;
-            void Perform(Farmer who)
-            {
-                if (!Valid() || who.FarmerSprite.PauseForSingleAnimation || !InCollectionReach(who, Tile()))
-                    return;
-                // Native petting owns hearts, friendship, happiness, profession bonuses and XP.
-                animal.pet(who);
-            }
-            return ForAnimal(animal, Tile, Valid, Perform) with { Kind = InteractionKind.Pet };
+            if (CanPet(location, farmer, animal) && animal.GetCursorPetBoundingBox().Intersects(cursorTile)
+                && TryResolvePetting(location, farmer, animal) is { } request)
+                return request;
         }
         foreach (Pet pet in location.characters.OfType<Pet>())
         {
@@ -119,6 +107,29 @@ internal static class InteractProbe
             return ForAnimal(pet, Tile, Valid, Perform) with { Kind = InteractionKind.Pet };
         }
         return null;
+    }
+
+    internal static bool CanPet(GameLocation location, Farmer farmer, FarmAnimal animal)
+        => Game1.currentLocation == location && !animal.wasPet.Value
+            && location.animals.Values.Any(live => ReferenceEquals(live, animal))
+            && farmer.ActiveObject?.QualifiedItemId != "(O)GoldenAnimalCracker"
+            && (Game1.timeOfDay < 1900 || animal.isMoving());
+
+    // Overview selects by identity instead of tile hitboxes, which can overlap.
+    internal static InteractRequest? TryResolvePetting(GameLocation location, Farmer farmer, FarmAnimal animal)
+    {
+        bool Valid() => CanPet(location, farmer, animal);
+        if (!Valid())
+            return null;
+        Point Tile() => animal.TilePoint;
+        void Perform(Farmer who)
+        {
+            if (who != farmer || !Valid() || who.FarmerSprite.PauseForSingleAnimation || !InCollectionReach(who, Tile()))
+                return;
+            // Native petting owns hearts, friendship, happiness, profession bonuses and XP.
+            animal.pet(who);
+        }
+        return ForAnimal(animal, Tile, Valid, Perform) with { Kind = InteractionKind.Pet };
     }
 
     /// <summary>Harvest the selected animal once with the explicitly equipped pail/shears.</summary>

@@ -44,6 +44,27 @@ internal abstract class OsWindow
     private Rectangle workArea;
 
     protected virtual Point GetMinimumSize(ModConfig config) => new(220, TitleHeight + 80);
+    internal bool ShowsContentBackground => DrawContentBackground;
+
+    internal Point GetMinimumSizeForGroup(ModConfig config, int titleHeight)
+    {
+        int previous = TitleHeight;
+        TitleHeight = titleHeight;
+        try { return GetMinimumSize(config); }
+        finally { TitleHeight = previous; }
+    }
+
+    internal void SetGroupedBounds(Rectangle bounds, int titleHeight, Rectangle workArea, Point? position, Point? size)
+    {
+        Bounds = bounds;
+        TitleHeight = titleHeight;
+        this.workArea = workArea;
+        this.position = position;
+        this.size = size;
+    }
+
+    internal void DrawGroupedContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config)
+        => DrawContent(batch, contentBounds, config);
 
     internal bool Layout(Rectangle workArea, int titleHeight, ModConfig config)
     {

@@ -129,6 +129,7 @@ public sealed partial class ModEntry : Mod
             // Also release the text field if another mod or a title transition replaces it.
             if (e.OldMenu is NumberEntryMenu numberEntry)
                 numberEntry.emergencyShutDown();
+            HandleShopMenuChanged(e.OldMenu, e.NewMenu);
         };
         helper.Events.GameLoop.UpdateTicked += (_, _) =>
         {

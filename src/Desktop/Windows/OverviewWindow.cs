@@ -1,5 +1,6 @@
 using AgrariaOS.Configuration;
 using AgrariaOS.Integration;
+using AgrariaOS.Interactions;
 using AgrariaOS.Movement;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
@@ -18,9 +19,9 @@ using System.Runtime.CompilerServices;
 namespace AgrariaOS.Desktop.Windows;
 
 // EVE-style overview: every object on the current map with Name/Category/Distance.
-// Right-click offers Interact (when the world probe finds an action) plus Approach;
+// Right-click offers entity-specific actions plus Approach;
 // Show Info is appended automatically via GetContextMenuInfo when Lookup Anything
-// recognizes the row. Ctrl-click or double-click approaches without swinging tools.
+// recognizes the row. Ctrl/Shift select groups; double-click approaches without tools.
 internal sealed class OverviewWindow : OsWindow
 {
     internal const string WindowId = "Overview";
@@ -34,6 +35,7 @@ internal sealed class OverviewWindow : OsWindow
     private readonly Action releaseFocus;
     private readonly ModConfig config;
     private readonly Action saveConfig;
+    private readonly OverviewContextMenuRouter contextMenus = new();
     private readonly TabBar tabs = new(new WindowTab("General", "General"), new WindowTab("All", "All"));
     private static readonly string[] GeneralDefaultHidden = new[] { "Bush", "Crop", "Furniture" };
     private readonly GridView<OverviewRow> grid = new(
@@ -47,7 +49,9 @@ internal sealed class OverviewWindow : OsWindow
     private OverviewRow[] cachedRows = Array.Empty<OverviewRow>();
     private GameLocation? scanLocation;
     private double lastScanMs = double.NegativeInfinity;
-    private OverviewRow? selected;
+    private readonly OverviewSelection selection = new();
+    private Farmer? selectionFarmer;
+    private uint selectionDay;
     private string? lastClickKey;
     private double lastClickMs = double.NegativeInfinity;
     private GameLocation? staticLocation;
@@ -96,13 +100,13 @@ internal sealed class OverviewWindow : OsWindow
         if (hidden.Count > 0)
             rows = rows.Where(row => !hidden.Contains(row.Category)).ToArray();
         grid.SetRows(rows);
-        if (selected != null && (hidden.Contains(selected.Category) || !selected.IsValid()))
-            selected = null;
+        RefreshSelection();
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
         Rectangle body = tabs.Draw(batch, contentBounds, config, cursor);
         grid.Draw(batch, body, grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding),
             config, cursor, Context.IsWorldReady ? "No objects." : "No location.",
-            isSelected: row => selected != null && row.StableKey == selected.StableKey);
+            isSelected: row => selection.Contains(row.StableKey),
+            footerText: $"Selected {selection.Count}/{ClickToMove.MaxQueued}  |  Ctrl: toggle  Shift: range");
     }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick)
@@ -124,10 +128,11 @@ internal sealed class OverviewWindow : OsWindow
         try { row = grid.GetRow(cursor); }
         catch { row = null; }
         bool ctrl = IsControlHeld();
+        bool shift = IsShiftHeld();
         if (row == null)
         {
-            if (!ctrl)
-                selected = null;
+            if (!ctrl && !shift)
+                selection.Clear();
             return;
         }
         bool valid;
@@ -139,14 +144,15 @@ internal sealed class OverviewWindow : OsWindow
         double now;
         try { now = Game1.currentGameTime.TotalGameTime.TotalMilliseconds; }
         catch { now = 0; }
-        bool doubleClick = lastClickKey != null && key == lastClickKey && now - lastClickMs < DoubleClickMs;
-        lastClickKey = key;
+        bool doubleClick = !ctrl && !shift && lastClickKey != null && key == lastClickKey && now - lastClickMs < DoubleClickMs;
+        lastClickKey = ctrl || shift ? null : key;
         lastClickMs = now;
-        selected = row;
-        if (ctrl || doubleClick)
+        RefreshSelection();
+        if (!selection.Click(key, ValidRowKeys(), ctrl, shift))
+            Game1.playSound("cancel");
+        if (doubleClick)
         {
-            if (doubleClick)
-                lastClickKey = null;
+            lastClickKey = null;
             try { Approach(row); }
             catch { }
         }
@@ -174,37 +180,75 @@ internal sealed class OverviewWindow : OsWindow
         catch { valid = false; }
         if (!valid)
             return null;
-        selected = row;
-        bool hasInteract;
-        try { hasInteract = TryProbe(row) != null; }
-        catch { hasInteract = false; }
+        RefreshSelection();
+        if (!selection.Contains(row.StableKey))
+            selection.SelectOnly(row.StableKey);
+        OverviewRow[] targets = grid.Rows.Where(target => selection.Contains(target.StableKey) && RowIsValid(target)).ToArray();
         var items = new List<ContextMenuItem>();
-        if (hasInteract)
+        GameLocation location = Game1.currentLocation;
+        Farmer farmer = Game1.player;
+        uint day = Game1.stats.DaysPlayed;
+        bool IsValid(OverviewRow target) => target.IsValid() && Game1.player == farmer && Game1.currentLocation == location
+            && Game1.stats.DaysPlayed == day;
+        try
         {
-            items.Add(new ContextMenuItem("Interact", () =>
-            {
-                try
-                {
-                    if (row.IsValid())
-                        Interact(row);
-                }
-                catch { }
-            }));
+            var requests = targets.Select(target => new OverviewMenuRequest(location, farmer, target.Entity, target.GetTile,
+                () => IsValid(target), CanAct, QueueInteraction, () => TryProbe(target))).ToArray();
+            items.AddRange((targets.Length > 1 ? contextMenus.CreateMany(requests, QueueInteractions)
+                : contextMenus.Create(requests[0])).Select(GuardAction));
         }
+        catch { }
         items.Add(new ContextMenuItem("Approach", () =>
         {
             try
             {
-                if (row.IsValid())
+                if (targets.Length > 1)
+                {
+                    var requests = targets.Where(IsValid).Select(target =>
+                    {
+                        Point tile = target.GetTile();
+                        Rectangle Bounds()
+                        {
+                            Point live = target.GetTile();
+                            return new Rectangle(live.X, live.Y, 1, 1);
+                        }
+                        ApproachTarget? move = target.Entity is Character
+                            ? new ApproachTarget(Bounds(), () => IsValid(target), Bounds)
+                            : ApproachTarget.ResolveSolid(location, farmer, tile,
+                                candidate => ClickToMove.CanWalkFor(location, farmer, candidate));
+                        Point Hit() => move?.HitTile(farmer.TilePoint) ?? target.GetTile();
+                        return new InteractRequest(move, Hit, () => IsValid(target) && move?.IsValid() != false, who =>
+                        {
+                            Point hit = Hit();
+                            who.faceDirection(who.getGeneralDirectionTowards(new Vector2(hit.X * 64 + 32, hit.Y * 64 + 32)));
+                        }) { Identity = target.Entity };
+                    }).ToArray();
+                    QueueInteractions(requests);
+                }
+                else if (IsValid(row))
                     Approach(row);
             }
             catch { }
-        }));
+        }, CanExecute: () => CanAct() && targets.Any(IsValid)));
         string category = row.Category;
         string currentTab = tabs.SelectedId;
         items.Add(new ContextMenuItem($"Hide '{category}'", () => HideCategory(currentTab, category)));
         return items.ToArray();
     }
+
+    private static ContextMenuItem GuardAction(ContextMenuItem item) => item with
+    {
+        OnClick = () =>
+        {
+            try
+            {
+                if (item.IsEnabledNow)
+                    item.OnClick?.Invoke();
+            }
+            catch { }
+        },
+        Children = item.Children?.Select(GuardAction).ToArray()
+    };
 
     internal override ContextMenuInfo? GetContextMenuInfo(Point cursor)
     {
@@ -308,8 +352,8 @@ internal sealed class OverviewWindow : OsWindow
         {
             SaveHidden(tabId, hidden);
             grid.ResetScroll();
-            if (selected != null && hidden.Contains(selected.Category))
-                selected = null;
+            selection.Refresh(grid.Rows.Where(row => !hidden.Contains(row.Category) && RowIsValid(row))
+                .Select(row => row.StableKey).ToArray());
         }
     }
 
@@ -317,8 +361,9 @@ internal sealed class OverviewWindow : OsWindow
     {
         SaveHidden(tabId, new HashSet<string>(GetTabDefaults(tabId), StringComparer.Ordinal));
         grid.ResetScroll();
-        if (selected != null && GetHiddenSet(tabId).Contains(selected.Category))
-            selected = null;
+        HashSet<string> hidden = GetHiddenSet(tabId);
+        selection.Refresh(grid.Rows.Where(row => !hidden.Contains(row.Category) && RowIsValid(row))
+            .Select(row => row.StableKey).ToArray());
     }
 
     private OverviewRow[] GetFilteredRows()
@@ -340,16 +385,51 @@ internal sealed class OverviewWindow : OsWindow
         catch { return false; }
     }
 
-    private void Interact(OverviewRow row)
+    private static bool IsShiftHeld()
     {
-        if (!CanAct())
+        try
+        {
+            KeyboardState keys = Game1.GetKeyboardState();
+            return keys.IsKeyDown(Keys.LeftShift) || keys.IsKeyDown(Keys.RightShift);
+        }
+        catch { return false; }
+    }
+
+    private static bool RowIsValid(OverviewRow row)
+    {
+        try { return row.IsValid(); }
+        catch { return false; }
+    }
+
+    private string[] ValidRowKeys() => grid.Rows.Where(RowIsValid).Select(row => row.StableKey).ToArray();
+
+    private void RefreshSelection()
+    {
+        Farmer? farmer = Context.IsWorldReady ? Game1.player : null;
+        uint day = Context.IsWorldReady ? Game1.stats.DaysPlayed : 0;
+        if (selectionFarmer != farmer || selectionDay != day)
+        {
+            selection.Clear();
+            selectionFarmer = farmer;
+            selectionDay = day;
+        }
+        selection.Refresh(ValidRowKeys());
+    }
+
+    private void QueueInteractions(IReadOnlyList<InteractRequest> requests)
+    {
+        if (CanAct() && getMovement().EnqueueInteractions(requests))
+        {
+            try { releaseFocus(); }
+            catch { }
+        }
+    }
+
+    private void QueueInteraction(InteractRequest request)
+    {
+        if (!CanAct() || !request.Valid())
             return;
-        GameLocation loc = Game1.currentLocation;
-        Farmer farmer = Game1.player;
-        Point tile = row.GetTile();
-        InteractRequest? request = InteractProbe.TryResolve(loc, farmer, tile, includeInRange: true);
-        if (request == null)
-            return;
+        Point tile = request.Tile();
         ClickToMove mover = getMovement();
         if (mover.IsBusy)
             mover.EnqueueInteract(request, tile);

@@ -26,6 +26,9 @@ public sealed class ModConfig
     public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
     // Open windows (back-to-front) with minimized flags, per farmer. Chest and lookup windows are transient.
     public Dictionary<long, List<WindowOpenState>> OpenWindows { get; set; } = new();
+    // Tab groups (tab order with the active tab), per farmer. Groups with fewer than two
+    // surviving windows are dropped on load. Chest and lookup windows are transient.
+    public Dictionary<long, List<TabGroupState>> WindowTabGroups { get; set; } = new();
     public Dictionary<long, Dictionary<string, string[]>> WindowHiddenColumns { get; set; } = new();
     public Dictionary<long, Dictionary<string, Dictionary<string, int>>> WindowColumnWidths { get; set; } = new();
     public Dictionary<long, Dictionary<string, string[]>> OverviewHiddenCategories { get; set; } = new();
@@ -100,6 +103,33 @@ public sealed class ModConfig
             }
             var seen = new HashSet<string>(StringComparer.Ordinal);
             OpenWindows[farmerId] = open.Where(state => state != null && !string.IsNullOrWhiteSpace(state.Id) && seen.Add(state.Id)).ToList();
+        }
+        WindowTabGroups ??= new();
+        foreach (long farmerId in WindowTabGroups.Keys.ToArray())
+        {
+            List<TabGroupState>? groups = WindowTabGroups[farmerId];
+            if (groups == null)
+            {
+                WindowTabGroups.Remove(farmerId);
+                continue;
+            }
+            var cleaned = new List<TabGroupState>();
+            foreach (TabGroupState group in groups)
+            {
+                if (group?.WindowIds == null)
+                    continue;
+                string[] ids = group.WindowIds.Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.Ordinal).ToArray();
+                if (ids.Length < 2)
+                    continue;
+                string active = string.IsNullOrWhiteSpace(group.ActiveId) || !ids.Contains(group.ActiveId, StringComparer.Ordinal)
+                    ? ids[0] : group.ActiveId;
+                cleaned.Add(new TabGroupState { WindowIds = ids.ToList(), ActiveId = active });
+            }
+            if (cleaned.Count == 0)
+                WindowTabGroups.Remove(farmerId);
+            else
+                WindowTabGroups[farmerId] = cleaned;
         }
         OverviewHiddenCategories ??= new();
         foreach (long farmerId in OverviewHiddenCategories.Keys.ToArray())

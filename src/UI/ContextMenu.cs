@@ -6,7 +6,17 @@ using StardewValley;
 namespace AgrariaOS.UI;
 
 internal sealed record ContextMenuItem(string Text, Action? OnClick = null, bool? IsChecked = null, bool IsEnabled = true,
-    ContextMenuItem[]? Children = null);
+    ContextMenuItem[]? Children = null, Func<bool>? CanExecute = null)
+{
+    internal bool IsEnabledNow
+    {
+        get
+        {
+            try { return IsEnabled && (CanExecute?.Invoke() ?? true); }
+            catch { return false; }
+        }
+    }
+}
 
 // The caller supplies a lookup for the clicked target and its lifetime guard. This is
 // shared by world providers, generic interactions and desktop content menus.
@@ -91,6 +101,9 @@ internal sealed class ContextMenu
     {
         if (IsOpen && isValid?.Invoke() == false)
             Close();
+        if (submenuRow >= 0 && !items[firstRow + submenuRow].IsEnabledNow)
+            CloseSubmenu();
+        submenu?.Update();
     }
 
     internal bool ReceiveScroll(int delta)
@@ -137,7 +150,7 @@ internal sealed class ContextMenu
                 {
                     ContextMenuItem item = items[firstRow + i];
                     // Disabled rows consume the press and leave the popup open.
-                    if (!item.IsEnabled)
+                    if (!item.IsEnabledNow)
                         return true;
                     if (item.Children is { Length: > 0 })
                     {
@@ -163,7 +176,7 @@ internal sealed class ContextMenu
         {
             int hoveredRow = (cursor.Y - bounds.Y - 1 - headerHeight) / rowHeight;
             if (cursor.Y >= bounds.Y + 1 + headerHeight && hoveredRow >= 0 && hoveredRow < visibleRows
-                && items[firstRow + hoveredRow] is { IsEnabled: true, Children: { Length: > 0 } })
+                && items[firstRow + hoveredRow] is { Children: { Length: > 0 } } hovered && hovered.IsEnabledNow)
                 OpenSubmenu(hoveredRow);
             else
                 CloseSubmenu();
@@ -182,14 +195,15 @@ internal sealed class ContextMenu
         {
             Rectangle row = RowBounds(i);
             ContextMenuItem item = items[firstRow + i];
-            Color color = item.IsEnabled ? UiStyle.Primary : UiStyle.Muted;
-            if (item.IsEnabled && (row.Contains(cursor) || i == submenuRow))
+            bool enabled = item.IsEnabledNow;
+            Color color = enabled ? UiStyle.Primary : UiStyle.Muted;
+            if (enabled && (row.Contains(cursor) || i == submenuRow))
                 batch.Draw(Game1.staminaRect, row, UiStyle.Border * config.Opacity);
 
             if (item.IsChecked.HasValue)
             {
                 Rectangle check = new(row.X + Padding, row.Center.Y - 5, 10, 10);
-                UiStyle.DrawBorder(batch, check, config.Opacity * (item.IsEnabled ? 1f : 0.5f));
+                UiStyle.DrawBorder(batch, check, config.Opacity * (enabled ? 1f : 0.5f));
                 if (item.IsChecked.Value)
                     batch.Draw(Game1.staminaRect, new Rectangle(check.X + 3, check.Y + 3, 4, 4), color * config.Opacity);
             }

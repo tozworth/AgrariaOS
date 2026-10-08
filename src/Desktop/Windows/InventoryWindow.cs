@@ -7,6 +7,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Menus;
 using StardewValley.Objects;
 using StardewValley.Tools;
 
@@ -20,6 +21,7 @@ internal sealed class InventoryWindow : OsWindow
     private const int IconSize = 20;
     private readonly ModConfig config;
     private readonly LookupAnythingIntegration? lookupAnything;
+    private readonly Func<ShopMenu?>? getTradeShop;
     private readonly GridView<Item> grid;
     private bool knowsPrices;
     private Chest? chest;
@@ -35,10 +37,11 @@ internal sealed class InventoryWindow : OsWindow
         .Where(item => item != null).ToArray());
 
     internal InventoryWindow(ModConfig config, Chest? chest = null,
-        LookupAnythingIntegration? lookupAnything = null)
+        LookupAnythingIntegration? lookupAnything = null, Func<ShopMenu?>? getTradeShop = null)
     {
         this.config = config;
         this.lookupAnything = lookupAnything;
+        this.getTradeShop = getTradeShop;
         grid = new GridView<Item>(
             GridColumn<Item>.Create("Name", 264, 44, item => item.DisplayName, item => item.DisplayName,
                 comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell, id: "name"),
@@ -234,6 +237,42 @@ internal sealed class InventoryWindow : OsWindow
                 TransferStatus = null;
             }, IsEnabled: targets.All(target => target.canBeTrashed()))
         });
+        if (chest == null && getTradeShop?.Invoke() is { } shop)
+        {
+            ShopMenu capturedShop = shop;
+            entries.Add(new ContextMenuItem("Sell", () =>
+            {
+                if (!IsCurrent() || !Context.IsPlayerFree)
+                    return;
+                if (getTradeShop?.Invoke() is not { } currentShop || !ReferenceEquals(currentShop, capturedShop))
+                {
+                    TransferStatus = "Shop closed.";
+                    return;
+                }
+                Item[] liveTargets = targets.Where(target => InventoryTransferBatch.IndexOf(farmer.Items, target) >= 0).ToArray();
+                if (liveTargets.Length == 0)
+                {
+                    TransferStatus = "That stack is no longer available.";
+                    return;
+                }
+                var sold = new List<string>();
+                string? lastStatus = null;
+                foreach (Item target in liveTargets)
+                {
+                    if (!TradeActions.CanSell(shop, target))
+                    {
+                        TransferStatus = $"The shop won't buy {target.DisplayName}.";
+                        return;
+                    }
+                    lastStatus = TradeActions.Sell(shop, target).Status;
+                    sold.Add(target.DisplayName);
+                }
+                selection.Refresh(farmer.Items.Where(current => current != null).ToArray());
+                TransferStatus = sold.Count == 1 ? lastStatus : $"Sold {sold.Count} stacks.";
+                if (TransferStatus != null && shop.forSale.Count == 0)
+                    TransferStatus += " Shop is sold out.";
+            }, IsEnabled: targets.All(target => TradeActions.CanSell(shop, target))));
+        }
         return entries.ToArray();
     }
 

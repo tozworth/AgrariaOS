@@ -13,3 +13,9 @@ public sealed record WindowOpenState
     public string Id { get; set; } = "";
     public bool IsMinimized { get; set; }
 }
+
+public sealed record TabGroupState
+{
+    public List<string> WindowIds { get; set; } = new();
+    public string ActiveId { get; set; } = "";
+}
