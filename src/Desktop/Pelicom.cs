@@ -18,6 +18,7 @@ internal sealed partial class Pelicom : IClickableMenu
     private const int IconScale = 3;
     private const int OverviewEntryIndex = 0;
     private const int BundlesEntryIndex = 5;
+    private const int WalletEntryIndex = 6;
     private const int MailEntryIndex = 7;
     private const int InventoryEntryIndex = 1;
     private const int LivestockEntryIndex = 2;
@@ -67,6 +68,8 @@ internal sealed partial class Pelicom : IClickableMenu
     private readonly Action openBundles;
     private readonly Func<bool> isBundlesMinimized;
     private readonly Func<bool> isBundlesAvailable;
+    private readonly Action openWallet;
+    private readonly Func<bool> isWalletMinimized;
     private readonly Action openOverview;
     private readonly Func<bool> isOverviewMinimized;
     private bool autoHideChecked;
@@ -88,6 +91,7 @@ internal sealed partial class Pelicom : IClickableMenu
         Action openNotes, Func<bool> isNotesMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
         Action openMiningLedger, Func<bool> isMiningLedgerMinimized,
         Action openBundles, Func<bool> isBundlesMinimized, Func<bool> isBundlesAvailable,
+        Action openWallet, Func<bool> isWalletMinimized,
         Action openOverview, Func<bool> isOverviewMinimized, Action saveConfig)
     {
         this.config = config;
@@ -114,6 +118,8 @@ internal sealed partial class Pelicom : IClickableMenu
         this.openBundles = openBundles;
         this.isBundlesMinimized = isBundlesMinimized;
         this.isBundlesAvailable = isBundlesAvailable;
+        this.openWallet = openWallet;
+        this.isWalletMinimized = isWalletMinimized;
         this.openOverview = openOverview;
         this.isOverviewMinimized = isOverviewMinimized;
         this.saveConfig = saveConfig;

@@ -28,6 +28,8 @@ partial class Pelicom : IClickableMenu
             openMiningLedger();
         else if (drawnSlots[BundlesEntryIndex].Contains(x, y))
             openBundles();
+        else if (drawnSlots[WalletEntryIndex].Contains(x, y))
+            openWallet();
         else if (drawnSlots[NotificationsEntryIndex].Contains(x, y))
             openNotifications();
         else if (drawnSlots[ChatEntryIndex].Contains(x, y))

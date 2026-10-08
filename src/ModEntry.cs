@@ -8,6 +8,7 @@ using AgrariaOS.UI;
 using AgrariaOS.Integration;
 using AgrariaOS.Mining;
 using AgrariaOS.Movement;
+using AgrariaOS.Wallet;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -30,6 +31,7 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
     private readonly PerScreen<NotificationHistory> notificationHistory = new(() => new NotificationHistory());
     private readonly MiningLedger miningLedger = new();
+    private readonly WalletLedger walletLedger = new();
     private readonly PerScreen<ChatSession> chatHistory = new(() => new ChatSession());
     private readonly PerScreen<bool> dialogueRoutingFailed = new(() => false);
     private readonly PerScreen<NotificationBubbleRenderer> notificationBubbleRenderer = new(() => new NotificationBubbleRenderer());
@@ -55,6 +57,8 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.OpenBundles(),
         () => Instance.windowManager.Value.IsMinimized(BundlesWindow.WindowId),
         () => BundlesWindow.IsAvailable(),
+        () => Instance.windowManager.Value.OpenWallet(Instance.walletLedger),
+        () => Instance.windowManager.Value.IsMinimized(WalletWindow.WindowId),
         () => Instance.windowManager.Value.OpenOverview(),
         () => Instance.windowManager.Value.IsMinimized(OverviewWindow.WindowId),
         () => Instance.Helper.WriteConfig(Instance.config)));
@@ -86,6 +90,8 @@ public sealed partial class ModEntry : Mod
         InstallDesktopPausePatches();
         InstallWorldInteractionPatches();
         InstallMiningPatches();
+        InstallWalletPatches();
+        WalletLedger.Active = walletLedger;
 
         helper.Events.GameLoop.DayStarted += (_, _) =>
         {
@@ -139,6 +145,7 @@ public sealed partial class ModEntry : Mod
         helper.Events.GameLoop.UpdateTicked += (_, _) =>
         {
             UpdateClickToMove(beforeUpdate: false);
+            walletLedger.Sync();
             // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
             if (patchInstalled && config.Enabled && Context.IsWorldReady && !Game1.onScreenMenus.Contains(pelicom.Value))
                 Game1.onScreenMenus.Add(pelicom.Value);
@@ -147,7 +154,7 @@ public sealed partial class ModEntry : Mod
             if (!windowsRestored.Value && UsePelicom)
             {
                 windowsRestored.Value = true;
-                windowManager.Value.RestoreSavedWindows(notificationHistory.Value, chatHistory.Value, miningLedger);
+                windowManager.Value.RestoreSavedWindows(notificationHistory.Value, chatHistory.Value, miningLedger, walletLedger);
             }
             RouteDialogue();
             windowManager.Value.Update(helper.Input);
@@ -175,6 +182,7 @@ public sealed partial class ModEntry : Mod
             toolbarRenderer.ResetAllScreens();
             notificationHistory.ResetAllScreens();
             miningLedger.ClearAll();
+            walletLedger.ClearAll();
             chatHistory.ResetAllScreens();
             dialogueRoutingFailed.ResetAllScreens();
             notificationBubbleRenderer.ResetAllScreens();

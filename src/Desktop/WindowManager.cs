@@ -5,6 +5,7 @@ using AgrariaOS.Notifications;
 using AgrariaOS.Interactions;
 using AgrariaOS.Integration;
 using AgrariaOS.Mining;
+using AgrariaOS.Wallet;
 using AgrariaOS.Movement;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
@@ -41,6 +42,7 @@ internal sealed partial class WindowManager
         SocialWindow.WindowId,
         MiningLedgerWindow.WindowId,
         BundlesWindow.WindowId,
+        WalletWindow.WindowId,
         NotificationsWindow.WindowId,
         ChatWindow.WindowId,
         NotesWindow.WindowId,
@@ -101,6 +103,7 @@ internal sealed partial class WindowManager
     internal void OpenSocial() => Open(SocialWindow.WindowId, () => new SocialWindow(lookupAnything, OpenLookup));
     internal void OpenMiningLedger(MiningLedger ledger) => Open(MiningLedgerWindow.WindowId, () => new MiningLedgerWindow(ledger));
     internal void OpenBundles() => Open(BundlesWindow.WindowId, () => new BundlesWindow(lookupAnything));
+    internal void OpenWallet(WalletLedger ledger) => Open(WalletWindow.WindowId, () => new WalletWindow(config, ledger));
     internal void OpenChestInventory(Chest chest)
     {
         Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest, lookupAnything, GetTradeShop));

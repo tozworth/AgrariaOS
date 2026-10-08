@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Reflection;
+using AgrariaOS.Wallet;
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Menus;
@@ -66,9 +68,42 @@ internal static partial class TradeActions
 
     internal sealed record BuyResult(string? Error, string? Status, bool ShouldClose);
 
+    internal static void NoteTradeGold(Farmer farmer, ShopMenu shop, int goldBefore, string itemName, int qty)
+    {
+        // Journal the measured gold delta with item details. Zero-delta exits
+        // (refunds, token trades) stay out of the gold ledger.
+        try
+        {
+            WalletLedger? ledger = WalletLedger.Active;
+            if (ledger == null || !Context.IsWorldReady || qty <= 0 || string.IsNullOrWhiteSpace(itemName))
+                return;
+            int after;
+            try { after = farmer.Money; }
+            catch { return; }
+            int delta = after - goldBefore;
+            if (delta == 0)
+                return;
+            long farmerId;
+            try { farmerId = farmer.UniqueMultiplayerID; }
+            catch { return; }
+            string shopName = "";
+            try { shopName = shop.ShopId ?? ""; }
+            catch { }
+            string action = delta > 0 ? "Sold" : "Bought";
+            string description = string.IsNullOrWhiteSpace(shopName)
+                ? $"{action} {qty}x {itemName}"
+                : $"{action} {qty}x {itemName} ({shopName})";
+            ledger.Record(farmerId, delta, description, WalletLedger.KindTrade, after);
+        }
+        catch { }
+    }
+
     internal static BuyResult Buy(ShopMenu shop, ISalable salable, int count)
     {
         Farmer farmer = Game1.player;
+        int goldBefore = 0;
+        try { goldBefore = farmer.Money; }
+        catch { }
         if (shop.readOnly)
             return new BuyResult(null, "This shop is read-only.", false);
         if (!shop.itemPriceAndStock.TryGetValue(salable, out ItemStockInformation? stockInfo))
@@ -153,6 +188,7 @@ internal static partial class TradeActions
             }
             else
             {
+                NoteTradeGold(farmer, shop, goldBefore, salable.DisplayName, totalItems);
                 return new BuyResult("That item can't fit in the backpack.", null, false);
             }
         }
@@ -191,6 +227,7 @@ internal static partial class TradeActions
         string status = totalItems != perSet || count > 1
             ? $"Bought {totalItems}x {name} for {totalPrice} {CurrencySuffix(shop.currency)}.".Trim()
             : $"Bought {name} for {totalPrice} {CurrencySuffix(shop.currency)}.".Trim();
+        NoteTradeGold(farmer, shop, goldBefore, name, totalItems);
         return new BuyResult(null, status, shouldClose);
     }
 

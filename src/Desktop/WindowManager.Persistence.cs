@@ -6,6 +6,7 @@ using AgrariaOS.Interactions;
 using AgrariaOS.Integration;
 using AgrariaOS.Mining;
 using AgrariaOS.Movement;
+using AgrariaOS.Wallet;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -19,7 +20,7 @@ namespace AgrariaOS.Desktop;
 
 partial class WindowManager
 {
-    internal void RestoreSavedWindows(NotificationHistory notifications, ChatSession chat, MiningLedger ledger)
+    internal void RestoreSavedWindows(NotificationHistory notifications, ChatSession chat, MiningLedger ledger, WalletLedger wallet)
     {
         if (!Context.IsWorldReady)
             return;
@@ -46,6 +47,7 @@ partial class WindowManager
                         case SocialWindow.WindowId: OpenSocial(); break;
                         case MiningLedgerWindow.WindowId: OpenMiningLedger(ledger); break;
                         case BundlesWindow.WindowId: OpenBundles(); break;
+                        case WalletWindow.WindowId: OpenWallet(wallet); break;
                         case NotificationsWindow.WindowId: OpenNotifications(notifications); break;
                         case ChatWindow.WindowId: OpenChat(chat); break;
                         case NotesWindow.WindowId: OpenNotes(); break;

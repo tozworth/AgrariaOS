@@ -123,6 +123,7 @@ partial class Pelicom : IClickableMenu
             if ((i == OverviewEntryIndex && isOverviewMinimized()) || (i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
                 || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == SocialEntryIndex && isSocialMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
                 || (i == BundlesEntryIndex && isBundlesMinimized())
+                || (i == WalletEntryIndex && isWalletMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
                 || (i == ChatEntryIndex && isChatMinimized())
                 || (i == NotesEntryIndex && isNotesMinimized()))

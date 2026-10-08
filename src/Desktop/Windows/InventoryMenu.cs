@@ -1,5 +1,6 @@
 using AgrariaOS.Configuration;
 using AgrariaOS.UI;
+using AgrariaOS.Wallet;
 using AgrariaOS.Interactions;
 using AgrariaOS.Integration;
 using System.Globalization;
@@ -62,10 +63,26 @@ partial class InventoryWindow : OsWindow
                 }
                 // Match vanilla's canBeTrashed guard and trash helper, including
                 // upgraded-can reclamation and special-item bookkeeping.
+                // Reclamation gold is journaled per stack so it never reads as earnings.
                 foreach (Item target in liveTargets)
                 {
+                    int stack = target.Stack;
+                    string name = target.DisplayName;
+                    int goldBefore = 0;
+                    try { goldBefore = farmer.Money; }
+                    catch { }
                     farmer.removeItemFromInventory(target);
                     Utility.trashItem(target);
+                    try
+                    {
+                        int delta = farmer.Money - goldBefore;
+                        if (delta == 0 || WalletLedger.Active is not { } ledger || !Context.IsWorldReady)
+                            continue;
+                        long farmerId = farmer.UniqueMultiplayerID;
+                        ledger.Record(farmerId, delta, $"Trashed {stack}x {name}",
+                            WalletLedger.KindTrash, farmer.Money);
+                    }
+                    catch { }
                 }
                 selection.Refresh(farmer.Items.Where(current => current != null).ToArray());
                 TransferStatus = null;

@@ -23,6 +23,9 @@ internal static partial class TradeActions
     internal static SellResult Sell(ShopMenu shop, Item item)
     {
         Farmer farmer = Game1.player;
+        int goldBefore = 0;
+        try { goldBefore = farmer.Money; }
+        catch { }
         if (!CanSell(shop, item))
             return new SellResult("The shop won't buy that.");
         int stack = item.Stack;
@@ -36,6 +39,7 @@ internal static partial class TradeActions
         {
             try { shop.onSell(item); } catch { }
             Game1.playSound("sell");
+            NoteTradeGold(farmer, shop, goldBefore, item.DisplayName, stack);
             return new SellResult($"Sold {stack}x {item.DisplayName}.");
         }
 
@@ -72,6 +76,7 @@ internal static partial class TradeActions
 
         Game1.playSound("sell");
         string suffix = CurrencySuffix(shop.currency);
+        NoteTradeGold(farmer, shop, goldBefore, item.DisplayName, stack);
         return new SellResult(total > 0
             ? $"Sold {stack}x {item.DisplayName} for {total} {suffix}.".Trim()
             : $"Sold {stack}x {item.DisplayName}.");
