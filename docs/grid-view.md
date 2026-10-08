@@ -9,7 +9,8 @@ preferred/minimum width, display text, and a typed sort key. Use numeric keys fo
 quantities, prices, or animal stats, and `StringComparer.CurrentCultureIgnoreCase`
 for localized text. Null keys stay last in both directions. Equal keys retain
 source order. Supply a unique, stable `id` for each column so saved visibility
-survives heading changes or localization; the heading is the default ID.
+survives heading changes or localization, along with saved widths; the heading is
+the default ID.
 A custom `drawCell` callback can render an icon or badge within its
 cell bounds; ordinary cells use the common pixel-aligned text renderer.
 
@@ -39,6 +40,14 @@ window ID. Inventory and chest inventory have separate choices; all chests share
 the chest window's choices. These survive closing windows and game reloads.
 Obsolete column IDs are ignored, new columns start visible, and a config hiding
 every column restores the first header so the menu remains accessible.
+
+Also forward `ConfigureColumnWidths` to the grid. The desktop manager restores
+preferred widths from `ModConfig.WindowColumnWidths`, keyed by farmer, window ID,
+and stable column ID, and saves them once at the end of a divider drag. Widths
+survive closing windows and game reloads, including hidden columns. Inventory and
+chests have separate settings; all chests share the chest settings. Unknown IDs
+are ignored and missing or invalid widths use column defaults. The grid continues
+to fit these preferences to the available window width and enforce minimum sizes.
 
 Use `GetRow(cursor)` for selection, context menus, and row actions. It follows the
 last drawn layout and ignores partial/empty rows. Use `RowsBounds` for empty-area

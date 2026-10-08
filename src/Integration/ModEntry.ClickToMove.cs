@@ -5,11 +5,13 @@ using StardewModdingAPI;
 using StardewValley;
 using StardewValley.TerrainFeatures;
 using StardewValley.Tools;
+using AgrariaOS.Hud;
 
 namespace AgrariaOS;
 
 public sealed partial class ModEntry
 {
+    private readonly AnimalQueueOutline animalQueueOutline = new();
     private bool CanQueueClickToMove => UsePelicom && config.ClickToMove && !clickToMoveFailed.Value
         && Context.IsPlayerFree && !HasDesktopFocus && !Game1.IsChatting && !Game1.eventUp && Game1.currentMinigame == null
         && Game1.farmEvent == null && !Game1.paused && !Game1.HostPaused && !Game1.fadeToBlack
@@ -94,6 +96,7 @@ public sealed partial class ModEntry
     {
         machineCollectDrag.Value.Reset();
         rockMiningDrag.Value.Reset();
+        animalHarvestDrag.Value.Reset();
         clickToMove.Value.Cancel();
         clickToMoveFailed.Value = true;
         Monitor.Log($"Click-to-move failed; restored vanilla left-click for this screen.\n{ex}", LogLevel.Error);
@@ -125,7 +128,7 @@ public sealed partial class ModEntry
 
     private void DrawMoveDestination(SpriteBatch batch)
     {
-        // Keep brackets visible while swinging/talking so the remaining queue stays readable.
+        // Keep indicators visible while swinging/talking so the queue stays readable.
         if (!UsePelicom || clickToMoveFailed.Value || !Context.IsWorldReady)
             return;
         var queued = clickToMove.Value.GetQueueDisplay();
@@ -133,8 +136,19 @@ public sealed partial class ModEntry
             return;
         const int length = 12;
         const int width = 2;
-        foreach (var (tile, color) in queued)
+        Dictionary<Character, int> animalLayers = new();
+        foreach (var indicator in queued)
         {
+            Point tile = indicator.Tile;
+            Color color = indicator.Color;
+            if (indicator.Animal is { } animal)
+            {
+                animalLayers.TryGetValue(animal, out int layer);
+                animalLayers[animal] = layer + 1;
+                try { animalQueueOutline.Draw(batch, animal, color, layer); }
+                catch (Exception ex) { Monitor.Log($"Animal queue outline failed.\n{ex}", LogLevel.Trace); }
+                continue;
+            }
             Vector2 pixel = Game1.GlobalToLocal(Game1.viewport, new Vector2(tile.X * 64, tile.Y * 64));
             // Cull far off-screen brackets instead of drawing at clamped viewport edges.
             if (pixel.X < -80 || pixel.Y < -80 || pixel.X > Game1.viewport.Width + 80 || pixel.Y > Game1.viewport.Height + 80)

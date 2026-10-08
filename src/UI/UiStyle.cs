@@ -11,10 +11,12 @@ internal static class UiStyle
     internal static readonly Color Border = new(78, 78, 78);
     internal static readonly Color Primary = new(226, 233, 239);
     internal static readonly Color Muted = new(150, 150, 150);
+    private static readonly Color FullHearts = new(155, 199, 163);
     internal const int MailIcon = 144;
     internal const int InventoryIcon = 152;
     internal const int NotificationIcon = 151;
     internal const int ChatIcon = 135;
+    internal const int SocialIcon = 43;
     private static readonly Color[] SpeakerColors =
     {
         new(104, 214, 255),
@@ -33,6 +35,11 @@ internal static class UiStyle
             hash = unchecked((hash ^ character) * 16777619);
         return SpeakerColors[hash % (uint)SpeakerColors.Length];
     }
+
+    // White-to-green heart scale for the Social and Livestock grids. The full
+    // end matches the vitals green above the toolbar.
+    internal static Color HeartColor(float ratio)
+        => Color.Lerp(Primary, FullHearts, Math.Clamp(ratio, 0f, 1f));
 
     internal static void DrawIcon(SpriteBatch batch, int index, Point position, int scale, float opacity)
     {

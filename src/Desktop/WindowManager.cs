@@ -35,6 +35,7 @@ internal sealed class WindowManager
         MailWindow.WindowId,
         InventoryWindow.WindowId,
         LivestockWindow.WindowId,
+        SocialWindow.WindowId,
         MiningLedgerWindow.WindowId,
         NotificationsWindow.WindowId,
         ChatWindow.WindowId,
@@ -80,6 +81,7 @@ internal sealed class WindowManager
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything));
     internal void OpenLivestock() => Open(LivestockWindow.WindowId, () => new LivestockWindow());
+    internal void OpenSocial() => Open(SocialWindow.WindowId, () => new SocialWindow(lookupAnything, OpenLookup));
     internal void OpenMiningLedger(MiningLedger ledger) => Open(MiningLedgerWindow.WindowId, () => new MiningLedgerWindow(ledger));
     internal void OpenChestInventory(Chest chest)
     {
@@ -120,6 +122,13 @@ internal sealed class WindowManager
                 columnLayouts[id] = hiddenColumns;
                 saveConfig();
             });
+            if (!config.WindowColumnWidths.TryGetValue(farmerId, out Dictionary<string, Dictionary<string, int>>? columnWidths))
+                config.WindowColumnWidths[farmerId] = columnWidths = new();
+            window.ConfigureColumnWidths(columnWidths.GetValueOrDefault(id) ?? new Dictionary<string, int>(), widths =>
+            {
+                columnWidths[id] = widths;
+                saveConfig();
+            });
         }
         window.IsMinimized = false;
         windows.Remove(window);
@@ -154,6 +163,7 @@ internal sealed class WindowManager
                         case MailWindow.WindowId: OpenMail(); break;
                         case InventoryWindow.WindowId: OpenInventory(); break;
                         case LivestockWindow.WindowId: OpenLivestock(); break;
+                        case SocialWindow.WindowId: OpenSocial(); break;
                         case MiningLedgerWindow.WindowId: OpenMiningLedger(ledger); break;
                         case NotificationsWindow.WindowId: OpenNotifications(notifications); break;
                         case ChatWindow.WindowId: OpenChat(chat); break;

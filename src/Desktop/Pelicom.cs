@@ -17,18 +17,20 @@ internal sealed class Pelicom : IClickableMenu
     private const int IconSize = 9;
     private const int IconScale = 3;
     private const int OverviewEntryIndex = 0;
-    private const int MailEntryIndex = 5;
+    private const int MailEntryIndex = 6;
     private const int InventoryEntryIndex = 1;
     private const int LivestockEntryIndex = 2;
-    private const int MiningEntryIndex = 3;
-    private const int ChatEntryIndex = 6;
-    private const int NotificationsEntryIndex = 7;
-    private const int ExitEntryIndex = 8;
+    private const int SocialEntryIndex = 3;
+    private const int MiningEntryIndex = 4;
+    private const int ChatEntryIndex = 7;
+    private const int NotificationsEntryIndex = 8;
+    private const int ExitEntryIndex = 9;
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Overview"),
         (UiStyle.InventoryIcon, "Inventory"),
         (74, "Livestock"),
+        (UiStyle.SocialIcon, "Social"),
         (121, "Mining Ledger"),
         (41, "Wallet"),
         (UiStyle.MailIcon, "Mail"),
@@ -46,6 +48,8 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Func<bool> isInventoryMinimized;
     private readonly Action openLivestock;
     private readonly Func<bool> isLivestockMinimized;
+    private readonly Action openSocial;
+    private readonly Func<bool> isSocialMinimized;
     private readonly Action openNotifications;
     private readonly Func<bool> isNotificationsMinimized;
     private readonly Func<int> unreadNotifications;
@@ -64,6 +68,7 @@ internal sealed class Pelicom : IClickableMenu
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
         Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized,
         Action openLivestock, Func<bool> isLivestockMinimized,
+        Action openSocial, Func<bool> isSocialMinimized,
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
         Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
         Action openMiningLedger, Func<bool> isMiningLedgerMinimized,
@@ -78,6 +83,8 @@ internal sealed class Pelicom : IClickableMenu
         this.isInventoryMinimized = isInventoryMinimized;
         this.openLivestock = openLivestock;
         this.isLivestockMinimized = isLivestockMinimized;
+        this.openSocial = openSocial;
+        this.isSocialMinimized = isSocialMinimized;
         this.openNotifications = openNotifications;
         this.isNotificationsMinimized = isNotificationsMinimized;
         this.unreadNotifications = unreadNotifications;
@@ -98,7 +105,7 @@ internal sealed class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Overview, Inventory, Livestock, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
+    // Overview, Inventory, Livestock, Social, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         if (!IsInteractive || !drawnBounds.Contains(x, y))
@@ -111,6 +118,8 @@ internal sealed class Pelicom : IClickableMenu
             openInventory();
         else if (drawnSlots[LivestockEntryIndex].Contains(x, y))
             openLivestock();
+        else if (drawnSlots[SocialEntryIndex].Contains(x, y))
+            openSocial();
         else if (drawnSlots[MiningEntryIndex].Contains(x, y))
             openMiningLedger();
         else if (drawnSlots[NotificationsEntryIndex].Contains(x, y))
@@ -236,7 +245,7 @@ internal sealed class Pelicom : IClickableMenu
                 slot.Y + (slot.Height - IconSize * IconScale) / 2);
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
             if ((i == OverviewEntryIndex && isOverviewMinimized()) || (i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
-                || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
+                || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == SocialEntryIndex && isSocialMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
                 || (i == ChatEntryIndex && isChatMinimized()))
                 batch.Draw(Game1.staminaRect, horizontal ? new Rectangle(slot.X + 8,

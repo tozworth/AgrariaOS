@@ -14,9 +14,9 @@ internal static class VitalsRenderer
     private const int IconSize = 9;
     private const int IconGap = 4;
     private const int StatGap = 12;
-    private static readonly Color EmptyColor = new(205, 150, 150);
-    private static readonly Color MidColor = new(205, 194, 150);
-    private static readonly Color FullColor = new(155, 199, 163);
+    internal static readonly Color EmptyColor = new(205, 150, 150);
+    internal static readonly Color MidColor = new(205, 194, 150);
+    internal static readonly Color FullColor = new(155, 199, 163);
 
     public static int GetHeight(ModConfig config) =>
         (int)MathF.Ceiling(Math.Max(Game1.smallFont.LineSpacing * config.FontScale, IconSize * GetIconScale(config)));

@@ -13,6 +13,7 @@ internal sealed class MachineCollectDrag
     private uint day;
 
     internal bool IsActive => location != null;
+    internal Tool? Tool { get; set; }
 
     internal void Begin(GameLocation here, Farmer who, uint today, Vector2 pixel)
     {
@@ -70,6 +71,7 @@ internal sealed class MachineCollectDrag
     {
         location = null;
         farmer = null;
+        Tool = null;
         visited.Clear();
     }
 }

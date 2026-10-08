@@ -19,7 +19,7 @@ internal sealed class LivestockWindow : OsWindow
             comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell, id: "name"),
         GridColumn<Character>.Create("Type", 140, 36, GetTypeName, GetTypeName,
             textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "type"),
-        GridColumn<Character>.Create("Hearts", 64, 28, GetHeartsText, GetFriendship, rightAligned: true, id: "hearts"),
+        GridColumn<Character>.Create("Hearts", 64, 28, GetHeartsText, GetFriendship, rightAligned: true, drawCell: DrawHeartsCell, id: "hearts"),
         GridColumn<Character>.Create("Petted", 80, 36, GetPetText, GetPetSort, id: "petted"),
         GridColumn<Character>.Create("Treat", 80, 36, GetTreatText, GetTreatText,
             textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "treat"));
@@ -51,6 +51,9 @@ internal sealed class LivestockWindow : OsWindow
     internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
     internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
         => grid.ConfigureColumnVisibility(hiddenColumns, onChanged);
+
+    internal override void ConfigureColumnWidths(IReadOnlyDictionary<string, int> widths, Action<Dictionary<string, int>> onChanged)
+        => grid.ConfigureColumnWidths(widths, onChanged);
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor) => grid.GetHeaderContextMenuItems(cursor);
     internal override void DragContent(Point cursor) => grid.Drag(cursor);
     internal override void EndContentDrag() => grid.EndDrag();
@@ -124,6 +127,14 @@ internal sealed class LivestockWindow : OsWindow
     private static string GetHeartsText(Character animal)
         => GetFriendship(animal) is { } friendship
             ? (friendship / 200.0).ToString("0.#", CultureInfo.InvariantCulture) : "";
+
+    private static void DrawHeartsCell(SpriteBatch batch, Character animal, Rectangle bounds, ModConfig config)
+    {
+        if (GetFriendship(animal) is not { } friendship)
+            return;
+        UiText.DrawCell(batch, GetHeartsText(animal), bounds,
+            UiStyle.HeartColor(friendship / 1000f), config, rightAligned: true);
+    }
 
     // Mirrors AnimalEntry.WasPetYet: 2 hand-petted, 1 auto-petted, 0 unpetted, null untracked.
     private static int? GetPetSort(Character animal) => animal switch

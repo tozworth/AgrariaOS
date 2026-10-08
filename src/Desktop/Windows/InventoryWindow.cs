@@ -101,7 +101,7 @@ internal sealed class InventoryWindow : OsWindow
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
         grid.Draw(batch, contentBounds, grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding),
             config, cursor, chest == null ? "Backpack empty." : "Chest empty.", selection.Contains,
-            footer, showRange: TransferStatus == null);
+            footer);
     }
 
     internal Item? SelectRow(Point cursor, bool control, bool shift)
@@ -260,6 +260,9 @@ internal sealed class InventoryWindow : OsWindow
     internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
     internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
         => grid.ConfigureColumnVisibility(hiddenColumns, onChanged);
+
+    internal override void ConfigureColumnWidths(IReadOnlyDictionary<string, int> widths, Action<Dictionary<string, int>> onChanged)
+        => grid.ConfigureColumnWidths(widths, onChanged);
     internal override void DragContent(Point cursor) => grid.Drag(cursor);
     internal override void EndContentDrag() => grid.EndDrag();
     internal override void ReceiveScroll(int delta) => grid.ReceiveScroll(delta);

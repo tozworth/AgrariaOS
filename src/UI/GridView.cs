@@ -17,6 +17,8 @@ internal sealed class GridView<TRow> where TRow : class
     private readonly Rectangle[] headers;
     private readonly List<int> visibleColumns;
     private Action<string[]>? columnVisibilityChanged;
+    private Action<Dictionary<string, int>>? columnWidthsChanged;
+    private bool widthsChangedDuringDrag;
     private readonly List<TRow> rows = new();
     private Rectangle scrollTrack;
     private Rectangle scrollThumb;
@@ -52,6 +54,16 @@ internal sealed class GridView<TRow> where TRow : class
         columnWidths = new int[columns.Length];
         headers = new Rectangle[columns.Length];
         visibleColumns = Enumerable.Range(0, columns.Length).ToList();
+    }
+
+    internal void ConfigureColumnWidths(IReadOnlyDictionary<string, int> widths, Action<Dictionary<string, int>> onChanged)
+    {
+        EndDrag();
+        for (int i = 0; i < columns.Length; i++)
+            preferredWidths[i] = widths.TryGetValue(columns[i].Id, out int width) && width >= 0
+                ? width : columns[i].PreferredWidth;
+        ClearLayout();
+        columnWidthsChanged = onChanged;
     }
 
     // Missing/new columns are visible by default. Ignore obsolete saved IDs, and
@@ -112,7 +124,7 @@ internal sealed class GridView<TRow> where TRow : class
         ClearLayout();
         this.rowHeight = rowHeight;
         int availableHeight = Math.Max(0, bounds.Height - Padding * 2 - rowHeight - 1);
-        bool showFooter = reserveFooter || rows.Count > availableHeight / rowHeight;
+        bool showFooter = reserveFooter;
         if (showFooter)
             availableHeight = Math.Max(0, availableHeight - rowHeight);
         int tableWidth = Math.Max(0, bounds.Width - Padding * 2 - ScrollbarWidth);
@@ -147,7 +159,7 @@ internal sealed class GridView<TRow> where TRow : class
     }
 
     internal void Draw(SpriteBatch batch, Rectangle bounds, int rowHeight, ModConfig config, Point cursor,
-        string emptyText, Func<TRow, bool>? isSelected = null, string? footerText = null, bool showRange = true)
+        string emptyText, Func<TRow, bool>? isSelected = null, string? footerText = null)
     {
         if (!Layout(bounds, rowHeight, reserveFooter: !string.IsNullOrEmpty(footerText)))
         {
@@ -197,10 +209,7 @@ internal sealed class GridView<TRow> where TRow : class
         }
         if (!footerBounds.IsEmpty)
         {
-            string summary = footerText ?? "";
-            if (showRange && MaxFirstRow > 0)
-                summary += (summary.Length > 0 ? "   |   " : "") + $"{layoutFirstRow + 1}-{layoutEndRow} of {rows.Count}";
-            UiText.DrawCell(batch, summary, footerBounds, UiStyle.Muted, config);
+            UiText.DrawCell(batch, footerText ?? "", footerBounds, UiStyle.Muted, config);
         }
     }
 
@@ -310,6 +319,7 @@ internal sealed class GridView<TRow> where TRow : class
             int delta = Math.Clamp(cursor.X - resizeStartX,
                 GetMinimumWidth(resizingColumn, RowsBounds.Width) - resizeLeftWidth,
                 resizeRightWidth - GetMinimumWidth(resizingRightColumn, RowsBounds.Width));
+            widthsChangedDuringDrag |= preferredWidths[resizingColumn] != resizeLeftWidth + delta;
             preferredWidths[resizingColumn] = resizeLeftWidth + delta;
             preferredWidths[resizingRightColumn] = resizeRightWidth - delta;
         }
@@ -322,9 +332,14 @@ internal sealed class GridView<TRow> where TRow : class
 
     internal void EndDrag()
     {
+        bool saveWidths = widthsChangedDuringDrag;
+        widthsChangedDuringDrag = false;
         resizingColumn = -1;
         resizingRightColumn = -1;
         scrollDragOffset = null;
+        if (saveWidths)
+            columnWidthsChanged?.Invoke(columns.Select((column, index) => (column.Id, Width: preferredWidths[index]))
+                .ToDictionary(column => column.Id, column => column.Width, StringComparer.Ordinal));
     }
 
     internal void ReceiveScroll(int delta)
@@ -352,7 +367,7 @@ internal sealed class GridView<TRow> where TRow : class
     private void FitColumns(int width)
     {
         int minimumTotal = 0;
-        int weightTotal = 0;
+        long weightTotal = 0;
         Array.Clear(columnWidths);
         foreach (int i in visibleColumns)
         {

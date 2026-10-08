@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Pathfinding;
 using StardewValley.Tools;
+using StardewValley.Characters;
 
 namespace AgrariaOS.Movement;
 
@@ -14,6 +15,8 @@ internal sealed record QueuedStep(
     Point? Warp,
     GameLocation Location,
     uint Day);
+
+internal readonly record struct QueueIndicator(Point Tile, Color Color, Character? Animal);
 
 internal sealed class ClickToMove
 {
@@ -54,7 +57,8 @@ internal sealed class ClickToMove
     private InteractRequest? interactRequest;
     private Point? arrivedInteractTile;
     private Action<Farmer>? arrivedInteractPerform;
-    private object? arrivedInteractIdentity;
+    private InteractRequest? arrivedInteractRequest;
+    private InteractRequest? toolRequest;
     private ToolTarget? repeatTool;
     private int repeatSwings;
     private readonly Queue<QueuedStep> pending = new();
@@ -91,28 +95,33 @@ internal sealed class ClickToMove
 
     internal bool HasQueuedRequest(InteractRequest request) => request.Identity == null
         ? HasQueuedInteraction(request.Tile())
-        : ReferenceEquals(interactRequest?.Identity, request.Identity)
-            || ReferenceEquals(arrivedInteractIdentity, request.Identity)
-            || pending.Any(step => ReferenceEquals(step.Request?.Identity, request.Identity));
+        : SameRequest(interactRequest, request) || SameRequest(arrivedInteractRequest, request)
+            || SameRequest(toolRequest, request) || pending.Any(step => SameRequest(step.Request, request));
 
-    internal IReadOnlyList<(Point Tile, Color Color)> GetQueueDisplay()
+    private static bool SameRequest(InteractRequest? a, InteractRequest b)
+        => a != null && a.Kind == b.Kind && ReferenceEquals(a.Identity, b.Identity);
+
+    internal IReadOnlyList<QueueIndicator> GetQueueDisplay()
     {
-        List<(Point Tile, Color Color)> list = new();
+        List<QueueIndicator> list = new();
         Point? active = controller != null || arrived ? ActiveDisplayTile()
             : repeatTool != null ? RepeatDisplayTile()
-            : arrivedInteractTile;
+            : toolRequest?.Tile() ?? arrivedInteractTile;
         if (active is { } head)
-            list.Add((head, QueuePalette[0]));
+            list.Add(new QueueIndicator(head, QueuePalette[0], QueueAnimal(interactRequest ?? toolRequest ?? arrivedInteractRequest)));
         foreach (QueuedStep step in pending)
         {
             Point tile = StepDisplayTile(step);
             int index = Math.Min(list.Count, QueuePalette.Length - 1);
-            list.Add((tile, QueuePalette[index]));
+            list.Add(new QueueIndicator(tile, QueuePalette[index], QueueAnimal(step.Request)));
             if (list.Count >= MaxQueued)
                 break;
         }
         return list;
     }
+
+    private static Character? QueueAnimal(InteractRequest? request)
+        => request?.Identity is FarmAnimal or Pet ? (Character)request.Identity : null;
 
     private Point? ActiveDisplayTile()
     {
@@ -209,8 +218,8 @@ internal sealed class ClickToMove
         day = Game1.stats.DaysPlayed;
         warpDestination = null;
         destination = clicked;
-        // Right-click arrivals never swing tools or cross map-edge warps; the stored
-        // action performs the vanilla right-click path directly on arrival.
+        // Stored interactions don't cross map-edge warps; their callbacks perform
+        // the selected native action on arrival, including single livestock tool uses.
         target = request.Move;
         interactTile = request.Tile;
         interactValid = request.Valid;
@@ -314,6 +323,8 @@ internal sealed class ClickToMove
             return false;
         if (!here.isTileOnMap(clicked))
             return false;
+        if (request.Identity != null && HasQueuedRequest(request))
+            return true;
         return EnqueueStep(new QueuedStep(clicked, request.Move, request, null, here, Game1.stats.DaysPlayed), startImmediately);
     }
 
@@ -349,7 +360,7 @@ internal sealed class ClickToMove
             perform = action;
             arrivedInteractTile = null;
             arrivedInteractPerform = null;
-            arrivedInteractIdentity = null;
+            arrivedInteractRequest = null;
             return true;
         }
         tile = default;
@@ -392,7 +403,8 @@ internal sealed class ClickToMove
         // Native mouse tool targeting accepts diagonals too. Already-reachable legs
         // arrive in place: a path controller would first center the farmer on a tile.
         Point? hit = interactTile?.Invoke() ?? target?.HitTile(start);
-        bool inReach = target is ToolTarget tool && interactTile == null
+        bool inReach = interactRequest?.InReach is { } reach ? reach(farmer)
+            : target is ToolTarget tool && interactTile == null
             ? tool.CanReach(farmer)
             : hit is { } reachable && Utility.tileWithinRadiusOfPlayer(reachable.X, reachable.Y, 1, farmer);
         if (inReach)
@@ -619,9 +631,9 @@ internal sealed class ClickToMove
         if (arrived)
         {
             Farmer who = farmer!;
-            // Right-click arrivals queue the vanilla right-click action for ModEntry to
-            // perform with its routing flag held. Moving targets that wandered off get
-            // bounded chase replans instead of interacting with empty air.
+            // Interaction arrivals retain their selected action. Right-click actions
+            // go through ModEntry's routing flag; livestock tools start here and wait
+            // for their native animation. Moving targets get bounded chase replans.
             if (interactTile != null && interactPerform != null)
             {
                 Func<bool>? valid = interactValid;
@@ -642,7 +654,8 @@ internal sealed class ClickToMove
                     CancelActive();
                     return;
                 }
-                if (!Utility.tileWithinRadiusOfPlayer(want.X, want.Y, 1, who))
+                if (!(interactRequest?.InReach?.Invoke(who)
+                        ?? Utility.tileWithinRadiusOfPlayer(want.X, want.Y, 1, who)))
                 {
                     if (++replans > 3)
                     {
@@ -651,7 +664,7 @@ internal sealed class ClickToMove
                     }
                     else if (target?.LiveTiles != null)
                     {
-                        // Keep the exact selected animal and pet-only callbacks as it moves.
+                        // Keep the exact selected animal and its action callbacks as it moves.
                         // Resolving a new generic right-click here could inspect an animal
                         // or select a different animal sharing the new tile.
                         destination = want;
@@ -682,11 +695,20 @@ internal sealed class ClickToMove
                     }
                     return;
                 }
-                object? identity = interactRequest?.Identity;
+                InteractRequest? request = interactRequest;
                 CancelActive();
+                if (request?.Tool is { } harvestTool)
+                {
+                    perform(who);
+                    toolFarmer = who;
+                    startedTool = harvestTool;
+                    toolRequest = request;
+                    releaseTicks = 0;
+                    return;
+                }
                 arrivedInteractTile = want;
                 arrivedInteractPerform = perform;
-                arrivedInteractIdentity = identity;
+                arrivedInteractRequest = request;
                 return;
             }
             ApproachTarget? approached = target;
@@ -849,6 +871,10 @@ internal sealed class ClickToMove
         releaseTicks++;
         if (toolFarmer == Game1.player && toolFarmer.CurrentTool == startedTool && toolFarmer.UsingTool)
         {
+            // Livestock tools finish through their own animation and finish net event.
+            // Keep ownership/identity throughout so drag selection can append safely.
+            if (startedTool is MilkPail or Shears)
+                return;
             // Upgraded hoes/cans normally wait for a mouse release; this is one uncharged use.
             if (toolFarmer.canReleaseTool)
                 toolFarmer.EndUsingTool();
@@ -857,6 +883,7 @@ internal sealed class ClickToMove
             return;
         toolFarmer = null;
         startedTool = null;
+        toolRequest = null;
     }
 
     private void CancelActive()
@@ -888,6 +915,6 @@ internal sealed class ClickToMove
         repeatSwings = 0;
         arrivedInteractTile = null;
         arrivedInteractPerform = null;
-        arrivedInteractIdentity = null;
+        arrivedInteractRequest = null;
     }
 }

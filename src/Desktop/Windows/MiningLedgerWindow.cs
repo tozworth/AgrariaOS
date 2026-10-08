@@ -57,12 +57,15 @@ internal sealed class MiningLedgerWindow : OsWindow
         DrawGraph(batch, graphBounds, day, rows, cursor, config);
         grid.SetRows(rows);
         grid.Draw(batch, gridBounds, rowHeight, config, cursor, "No ore recorded today.",
-            footerText: day.Total == 0 ? "No ore recorded today." : $"Total {day.Total} ore", showRange: false);
+            footerText: day.Total == 0 ? "No ore recorded today." : $"Total {day.Total} ore");
     }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
     internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
         => grid.ConfigureColumnVisibility(hiddenColumns, onChanged);
+
+    internal override void ConfigureColumnWidths(IReadOnlyDictionary<string, int> widths, Action<Dictionary<string, int>> onChanged)
+        => grid.ConfigureColumnWidths(widths, onChanged);
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor) => grid.GetHeaderContextMenuItems(cursor);
     internal override void DragContent(Point cursor) => grid.Drag(cursor);
     internal override void EndContentDrag() => grid.EndDrag();

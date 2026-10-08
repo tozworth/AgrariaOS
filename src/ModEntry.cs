@@ -25,6 +25,7 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<bool> clickToMoveFailed = new(() => false);
     private readonly PerScreen<MachineCollectDrag> machineCollectDrag = new(() => new MachineCollectDrag());
     private readonly PerScreen<MachineCollectDrag> rockMiningDrag = new(() => new MachineCollectDrag());
+    private readonly PerScreen<MachineCollectDrag> animalHarvestDrag = new(() => new MachineCollectDrag());
     private readonly PerScreen<StatusReadoutRenderer> statusReadoutRenderer = new(() => new StatusReadoutRenderer());
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
     private readonly PerScreen<NotificationHistory> notificationHistory = new(() => new NotificationHistory());
@@ -39,6 +40,8 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId),
         () => Instance.windowManager.Value.OpenLivestock(),
         () => Instance.windowManager.Value.IsMinimized(LivestockWindow.WindowId),
+        () => Instance.windowManager.Value.OpenSocial(),
+        () => Instance.windowManager.Value.IsMinimized(SocialWindow.WindowId),
         () => Instance.windowManager.Value.OpenNotifications(Instance.notificationHistory.Value),
         () => Instance.windowManager.Value.IsMinimized(NotificationsWindow.WindowId),
         () => Instance.notificationHistory.Value.UnreadCount,
@@ -92,6 +95,7 @@ public sealed partial class ModEntry : Mod
             UpdateDesktopPause();
             UpdateMachineCollectDrag();
             UpdateRockMiningDrag();
+            UpdateAnimalHarvestDrag();
             UpdateClickToMove(beforeUpdate: true);
         };
         helper.Events.Input.MouseWheelScrolled += (_, e) =>
@@ -151,6 +155,8 @@ public sealed partial class ModEntry : Mod
             clickToMoveFailed.ResetAllScreens();
             machineCollectDrag.ResetAllScreens();
             rockMiningDrag.ResetAllScreens();
+            animalHarvestDrag.ResetAllScreens();
+            animalQueueOutline.Clear();
             hardwareCursor.Reset();
             foreach (var screen in windowManager.GetActiveValues())
             {
@@ -184,6 +190,7 @@ public sealed partial class ModEntry : Mod
         {
             machineCollectDrag.Value.Reset();
             rockMiningDrag.Value.Reset();
+            animalHarvestDrag.Value.Reset();
         }
         // New destinations, UI clicks and ordinary controls all release our route first.
         // This only clears a controller we own, never one installed by an event/other mod.
@@ -230,7 +237,7 @@ public sealed partial class ModEntry : Mod
             return;
         }
 
-        if (e.Button == SButton.MouseLeft && !e.IsSuppressed() && (CanClickToMove || CanAppendToQueue))
+        if (e.Button == SButton.MouseLeft && !e.IsSuppressed() && (CanSelectCollections || CanClickToMove || CanAppendToQueue))
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             // Keep clock/journal/zoom, toolbar and other mods' HUD menus in vanilla's hands.
@@ -244,6 +251,11 @@ public sealed partial class ModEntry : Mod
                     bool furnitureClick = IsFurnitureLeftClick(Game1.currentLocation, Game1.player, tile);
                     if (!furnitureClick && (Helper.Input.IsDown(SButton.LeftShift) || Helper.Input.IsDown(SButton.RightShift)))
                         return;
+                    if (!furnitureClick && CanSelectCollections && TryBeginAnimalHarvestDrag(pixel, tile))
+                    {
+                        Helper.Input.Suppress(e.Button);
+                        return;
+                    }
                     bool busyBefore = clickToMove.Value.IsBusy;
                     bool moveAllowed = CanClickToMove;
                     if ((furnitureClick || moveAllowed) && (furnitureClick

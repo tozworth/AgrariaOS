@@ -27,6 +27,7 @@ public sealed class ModConfig
     // Open windows (back-to-front) with minimized flags, per farmer. Chest and lookup windows are transient.
     public Dictionary<long, List<WindowOpenState>> OpenWindows { get; set; } = new();
     public Dictionary<long, Dictionary<string, string[]>> WindowHiddenColumns { get; set; } = new();
+    public Dictionary<long, Dictionary<string, Dictionary<string, int>>> WindowColumnWidths { get; set; } = new();
     public Dictionary<long, Dictionary<string, string[]>> OverviewHiddenCategories { get; set; } = new();
 
     internal void Normalize()
@@ -66,6 +67,27 @@ public sealed class ModConfig
             foreach (string id in columns.Keys.ToArray())
                 columns[id] = (columns[id] ?? Array.Empty<string>())
                     .Where(column => !string.IsNullOrWhiteSpace(column)).Distinct(StringComparer.Ordinal).ToArray();
+        }
+        WindowColumnWidths ??= new();
+        foreach (long farmerId in WindowColumnWidths.Keys.ToArray())
+        {
+            Dictionary<string, Dictionary<string, int>>? windows = WindowColumnWidths[farmerId];
+            if (windows == null)
+            {
+                WindowColumnWidths.Remove(farmerId);
+                continue;
+            }
+            foreach (string id in windows.Keys.ToArray())
+            {
+                if (windows[id] is not { } widths)
+                {
+                    windows.Remove(id);
+                    continue;
+                }
+                foreach (string column in widths.Keys.ToArray())
+                    if (string.IsNullOrWhiteSpace(column) || widths[column] < 0)
+                        widths.Remove(column);
+            }
         }
         OpenWindows ??= new();
         foreach (long farmerId in OpenWindows.Keys.ToArray())
