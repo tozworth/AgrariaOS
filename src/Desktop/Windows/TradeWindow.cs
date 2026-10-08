@@ -12,7 +12,7 @@ using StardewValley.Tools;
 
 namespace AgrariaOS.Desktop.Windows;
 
-internal sealed class TradeWindow : OsWindow
+internal sealed partial class TradeWindow : OsWindow
 {
     internal const string WindowId = "Trade";
     private const int Padding = GridView<ISalable>.Padding;
@@ -29,15 +29,6 @@ internal sealed class TradeWindow : OsWindow
     internal ShopMenu? Shop => shop;
     internal string? TransferStatus { get; set; }
     internal bool ContainsDropPoint(Point cursor) => grid.RowsBounds.Contains(cursor);
-    internal ISalable[] SelectedItems
-    {
-        get
-        {
-            if (shop == null)
-                return Array.Empty<ISalable>();
-            return shop.forSale.Where(selected.Contains).ToArray();
-        }
-    }
 
     internal TradeWindow(ModConfig config, ShopMenu shop,
         LookupAnythingIntegration? lookupAnything, Action<ISalable[]> requestBuy)
@@ -99,128 +90,15 @@ internal sealed class TradeWindow : OsWindow
             config, cursor, "Sold out.", selected.Contains, footer);
     }
 
-    internal ISalable? SelectRow(Point cursor, bool control, bool shift)
-    {
-        if (shop == null)
-            return null;
-        ISalable? item = grid.GetRow(cursor);
-        if (item == null)
-        {
-            if (grid.RowsBounds.Contains(cursor) && !control && !shift)
-            {
-                selected.Clear();
-                anchor = null;
-                TransferStatus = null;
-            }
-            return null;
-        }
-        if (!shop.forSale.Any(current => ReferenceEquals(current, item)))
-            return null;
-        ISalable[] displayed = grid.Rows.Where(displayed => shop.forSale.Any(current => ReferenceEquals(current, displayed))).ToArray();
-        Click(item, displayed, control, shift);
-        TransferStatus = null;
-        return selected.Contains(item) ? item : null;
-    }
 
-    internal void CollapseSelection(ISalable item)
-    {
-        selected.Clear();
-        selected.Add(item);
-        anchor = item;
-    }
 
-    internal ISalable? GetRowAt(Point cursor) => grid.GetRow(cursor);
 
-    internal Rectangle? GetRowBoundsAt(Point cursor) => grid.GetRowBounds(cursor);
 
-    internal void SelectAll()
-    {
-        if (shop == null)
-            return;
-        selected.Clear();
-        foreach (ISalable item in shop.forSale)
-            selected.Add(item);
-        anchor = shop.forSale.Count > 0 ? shop.forSale[0] : null;
-        TransferStatus = null;
-    }
 
-    internal void DrawItemDrag(SpriteBatch batch, Point cursor, ISalable[] draggedItems, bool validDrop, ModConfig config)
-    {
-        int count = draggedItems.Length;
-        if (count == 0)
-            return;
-        string label = $"{count} item{(count == 1 ? "" : "s")}";
-        int width = (int)MathF.Ceiling(Game1.smallFont.MeasureString(label).X * config.FontScale) + IconSize + Padding * 4 + 1;
-        Rectangle badge = new(cursor.X + 16, cursor.Y + 16, Math.Min(width, Game1.uiViewport.Width),
-            grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding) + Padding * 2);
-        badge.X = Math.Clamp(badge.X, 0, Math.Max(0, Game1.uiViewport.Width - badge.Width));
-        badge.Y = Math.Clamp(badge.Y, 0, Math.Max(0, Game1.uiViewport.Height - badge.Height));
-        batch.Draw(Game1.staminaRect, badge, UiStyle.Background * config.Opacity);
-        UiStyle.DrawBorder(batch, badge, config.Opacity);
-        if (draggedItems[0] is Item firstItem)
-            DrawItemIcon(batch, firstItem, new Rectangle(badge.X + Padding,
-                badge.Y + (badge.Height - IconSize) / 2, IconSize, IconSize), config.Opacity);
-        Rectangle textBounds = new(badge.X + IconSize + Padding, badge.Y, badge.Width - IconSize - Padding, badge.Height);
-        UiText.DrawCell(batch, label, textBounds,
-            validDrop ? new Color(137, 221, 151) : UiStyle.Muted, config);
-    }
 
-    internal void DrawDropTarget(SpriteBatch batch, ModConfig config)
-    {
-        Rectangle rowsBounds = grid.RowsBounds;
-        Color color = new Color(137, 221, 151) * config.Opacity;
-        batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Y, rowsBounds.Width, 1), color);
-        batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Bottom - 1, rowsBounds.Width, 1), color);
-    }
 
-    internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
-    {
-        if (grid.GetHeaderContextMenuItems(cursor) is { } columns)
-            return columns;
-        if (shop == null || grid.GetRow(cursor) is not { } item)
-            return null;
-        Func<bool> IsCurrent = GetContextItemGuard(item);
-        if (!IsCurrent())
-            return null;
-        ISalable[] targets = ContextTargets(item);
-        return new[]
-        {
-            new ContextMenuItem("Buy", () =>
-            {
-                if (!IsCurrent() || !Context.IsPlayerFree)
-                    return;
-                ISalable[] live = targets.Where(target => shop.forSale.Any(current => ReferenceEquals(current, target))).ToArray();
-                if (live.Length == 0)
-                {
-                    TransferStatus = "That item is no longer for sale.";
-                    return;
-                }
-                requestBuy(live);
-            }, IsEnabled: targets.Length > 0),
-        };
-    }
 
-    internal override ContextMenuInfo? GetContextMenuInfo(Point cursor)
-    {
-        if (lookupAnything?.Available != true || shop == null || grid.GetRow(cursor) is not { } salable)
-            return null;
-        if (salable is not Item item)
-            return null;
-        Func<bool> isCurrent = GetContextItemGuard(salable);
-        return new ContextMenuInfo(() => lookupAnything.GetInventorySubject(item),
-            () => isCurrent() && Context.IsPlayerFree);
-    }
 
-    private Func<bool> GetContextItemGuard(ISalable item)
-    {
-        Farmer farmer = Game1.player;
-        uint day = Game1.stats.DaysPlayed;
-        ShopMenu? captured = shop;
-        return () => Context.IsWorldReady && Game1.player == farmer
-            && Game1.stats.DaysPlayed == day
-            && IsValid && !IsMinimized && ReferenceEquals(shop, captured)
-            && captured != null && captured.forSale.Any(current => ReferenceEquals(current, item));
-    }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
     internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)

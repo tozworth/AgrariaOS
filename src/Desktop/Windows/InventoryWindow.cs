@@ -13,7 +13,7 @@ using StardewValley.Tools;
 
 namespace AgrariaOS.Desktop.Windows;
 
-internal sealed class InventoryWindow : OsWindow
+internal sealed partial class InventoryWindow : OsWindow
 {
     internal const string WindowId = "Inventory";
     internal const string ChestWindowId = "ChestInventory";
@@ -182,120 +182,8 @@ internal sealed class InventoryWindow : OsWindow
         batch.Draw(Game1.staminaRect, new Rectangle(row.Right - 1, row.Y, 1, row.Height), color);
     }
 
-    internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
-    {
-        if (grid.GetHeaderContextMenuItems(cursor) is { } columns)
-            return columns;
-        Item? item = grid.GetRow(cursor);
-        if (item == null)
-            return null;
-        Farmer farmer = Game1.player;
-        Func<bool> IsCurrent = GetContextItemGuard(item);
-        if (!IsCurrent())
-            return null;
-        var entries = new List<ContextMenuItem>();
-        if (chest != null)
-            return lookupAnything?.Available == true ? Array.Empty<ContextMenuItem>() : null;
-        Item[] targets = selection.ContextTargets(item, farmer.Items.Where(current => current != null).ToArray());
-        entries.AddRange(new ContextMenuItem[]
-        {
-            new("Split", () =>
-            {
-                if (targets.Length != 1 || !IsCurrent() || !Context.IsPlayerFree)
-                    return;
-                if (item.maximumStackSize() <= 1 || item.Stack <= 1)
-                {
-                    TransferStatus = "This item cannot be split.";
-                    return;
-                }
-                Game1.activeClickableMenu = new NumberEntryMenu(config, $"Split {item.DisplayName}",
-                    () => $"Quantity for the new stack (1-{item.Stack - 1})", amount =>
-                    {
-                        string? error = InventoryStackActions.Split(farmer.Items, farmer.MaxItems, item, amount);
-                        if (error == null)
-                            TransferStatus = null;
-                        return error;
-                    }, IsCurrent);
-            }, IsEnabled: targets.Length == 1),
-            new("Jettison", () =>
-            {
-                if (!IsCurrent() || !Context.IsPlayerFree)
-                    return;
-                Item[] liveTargets = targets.Where(target => InventoryTransferBatch.IndexOf(farmer.Items, target) >= 0).ToArray();
-                if (liveTargets.Any(target => !target.canBeTrashed()))
-                {
-                    TransferStatus = "The selection contains an item that cannot be trashed.";
-                    return;
-                }
-                // Match vanilla's canBeTrashed guard and trash helper, including
-                // upgraded-can reclamation and special-item bookkeeping.
-                foreach (Item target in liveTargets)
-                {
-                    farmer.removeItemFromInventory(target);
-                    Utility.trashItem(target);
-                }
-                selection.Refresh(farmer.Items.Where(current => current != null).ToArray());
-                TransferStatus = null;
-            }, IsEnabled: targets.All(target => target.canBeTrashed()))
-        });
-        if (chest == null && getTradeShop?.Invoke() is { } shop)
-        {
-            ShopMenu capturedShop = shop;
-            entries.Add(new ContextMenuItem("Sell", () =>
-            {
-                if (!IsCurrent() || !Context.IsPlayerFree)
-                    return;
-                if (getTradeShop?.Invoke() is not { } currentShop || !ReferenceEquals(currentShop, capturedShop))
-                {
-                    TransferStatus = "Shop closed.";
-                    return;
-                }
-                Item[] liveTargets = targets.Where(target => InventoryTransferBatch.IndexOf(farmer.Items, target) >= 0).ToArray();
-                if (liveTargets.Length == 0)
-                {
-                    TransferStatus = "That stack is no longer available.";
-                    return;
-                }
-                var sold = new List<string>();
-                string? lastStatus = null;
-                foreach (Item target in liveTargets)
-                {
-                    if (!TradeActions.CanSell(shop, target))
-                    {
-                        TransferStatus = $"The shop won't buy {target.DisplayName}.";
-                        return;
-                    }
-                    lastStatus = TradeActions.Sell(shop, target).Status;
-                    sold.Add(target.DisplayName);
-                }
-                selection.Refresh(farmer.Items.Where(current => current != null).ToArray());
-                TransferStatus = sold.Count == 1 ? lastStatus : $"Sold {sold.Count} stacks.";
-                if (TransferStatus != null && shop.forSale.Count == 0)
-                    TransferStatus += " Shop is sold out.";
-            }, IsEnabled: targets.All(target => TradeActions.CanSell(shop, target))));
-        }
-        return entries.ToArray();
-    }
 
-    internal override ContextMenuInfo? GetContextMenuInfo(Point cursor)
-    {
-        if (lookupAnything?.Available != true || grid.GetRow(cursor) is not { } item)
-            return null;
-        Func<bool> isCurrent = GetContextItemGuard(item);
-        return new ContextMenuInfo(() => lookupAnything.GetInventorySubject(item),
-            () => isCurrent() && Context.IsPlayerFree);
-    }
 
-    private Func<bool> GetContextItemGuard(Item item)
-    {
-        Farmer farmer = Game1.player;
-        GameLocation location = Game1.currentLocation;
-        uint day = Game1.stats.DaysPlayed;
-        return () => Context.IsWorldReady && Game1.player == farmer
-            && Game1.currentLocation == location && Game1.stats.DaysPlayed == day
-            && IsValid && !IsMinimized
-            && (chest?.GetItemsForPlayer() ?? farmer.Items).Any(current => ReferenceEquals(current, item));
-    }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick) => grid.ReceiveClick(cursor, leftClick);
     internal override void ConfigureColumnVisibility(IEnumerable<string> hiddenColumns, Action<string[]> onChanged)
@@ -307,108 +195,9 @@ internal sealed class InventoryWindow : OsWindow
     internal override void EndContentDrag() => grid.EndDrag();
     internal override void ReceiveScroll(int delta) => grid.ReceiveScroll(delta);
 
-    private static void DrawNameCell(SpriteBatch batch, Item item, Rectangle bounds, ModConfig config)
-    {
-        DrawItemIcon(batch, item, new Rectangle(bounds.X + Padding,
-            bounds.Y + (bounds.Height - IconSize) / 2, IconSize, IconSize), config.Opacity);
-        bounds.X += IconSize + Padding;
-        bounds.Width -= IconSize + Padding;
-        UiText.DrawCell(batch, item.DisplayName, bounds, UiStyle.Primary, config);
-    }
 
-    private static long? GetValue(Item item, bool knowsPrices)
-    {
-        // Stardew 1.6.15 IClickableMenu.drawHoverText's Price Catalogue branch.
-        if (!knowsPrices || item is Furniture or Clothing or Wallpaper || !item.CanBeLostOnDeath()
-            || (item is StardewValley.Object obj && obj.bigCraftable.Value))
-            return null;
 
-        int unitPrice = item.sellToStorePrice(-1L);
-        long value = (long)unitPrice * item.Stack;
-        return unitPrice > 0 && value > 0 ? value : null;
-    }
 
-    private static string GetValueText(Item item, bool knowsPrices)
-        => GetValue(item, knowsPrices) is { } value ? value.ToString("N0", CultureInfo.InvariantCulture) + " g" : "";
 
-    private static void DrawItemIcon(SpriteBatch batch, Item item, Rectangle bounds, float opacity)
-    {
-        // Registry sprites fit inside the cell without vanilla's 64px recipe/bar overlays.
-        // Keep normal 16px item sprites at their native size and fit larger item types.
-        var data = ItemRegistry.GetDataOrErrorItem(item is MeleeWeapon weapon ? weapon.GetDrawnItemId() : item.QualifiedItemId);
-        Rectangle source = data.GetSourceRect(0, GetIconSpriteIndex(item));
-        float scale = Math.Min((float)bounds.Width / source.Width, (float)bounds.Height / source.Height);
-        if (scale >= 1)
-            scale = MathF.Floor(scale);
-        int width = Math.Max(1, (int)(source.Width * scale));
-        int height = Math.Max(1, (int)(source.Height * scale));
-        Rectangle destination = new(bounds.X + (bounds.Width - width) / 2, bounds.Y + (bounds.Height - height) / 2, width, height);
-        Color tint = item is ColoredObject colored && colored.ColorSameIndexAsParentSheetIndex ? colored.color.Value : Color.White;
-        batch.Draw(data.GetTexture(), destination, source, tint * opacity);
-        if (item is ColoredObject overlay && !overlay.ColorSameIndexAsParentSheetIndex)
-            batch.Draw(data.GetTexture(), destination, data.GetSourceRect(1, item.ParentSheetIndex), overlay.color.Value * opacity);
 
-        if (item.Quality > 0)
-        {
-            Rectangle star = item.Quality < 4 ? new Rectangle(338 + (item.Quality - 1) * 8, 400, 8, 8) : new Rectangle(346, 392, 8, 8);
-            batch.Draw(Game1.mouseCursors, new Rectangle(bounds.Right - 8, bounds.Bottom - 8, 8, 8), star, Color.White * opacity);
-        }
-    }
-
-    private static void DrawChestIcon(SpriteBatch batch, Chest chest, Point position, int iconSize, float opacity)
-    {
-        try
-        {
-            Texture2D? sheet = Game1.bigCraftableSpriteSheet;
-            if (sheet == null)
-                throw new InvalidOperationException("Chest sprite sheet unavailable.");
-            // Vanilla Chest.draw layers a 16x32 base plus its closed lid. Standard
-            // chests (130 wood, 232 stone) use a separate colored set at 168 when
-            // the player picks a non-default color.
-            int baseIndex = chest.ParentSheetIndex;
-            int lidIndex = chest.startingLidFrame.Value;
-            if (lidIndex <= 0)
-                lidIndex = baseIndex + 1;
-            Color tint = chest.Tint;
-            Color choice = chest.playerChoiceColor.Value;
-            float scale = (float)iconSize / 32f;
-            Vector2 basePosition = new(position.X + (iconSize - 16 * scale) / 2f,
-                position.Y + (iconSize - 32 * scale) / 2f);
-            if (chest.playerChest.Value && (baseIndex == 130 || baseIndex == 232) && !choice.Equals(Color.Black))
-            {
-                int coloredBase = baseIndex == 130 ? 168 : baseIndex;
-                int coloredLid = baseIndex == 130 ? lidIndex + 38 : lidIndex;
-                int whiteLid = baseIndex == 130 ? lidIndex + 46 : lidIndex + 8;
-                Rectangle baseSource = Game1.getSourceRectForStandardTileSheet(sheet, coloredBase, 16, 32);
-                Rectangle lidColorSource = Game1.getSourceRectForStandardTileSheet(sheet, coloredLid, 16, 32);
-                Rectangle lidWhiteSource = Game1.getSourceRectForStandardTileSheet(sheet, whiteLid, 16, 32);
-                Rectangle detailSource = new(0, coloredBase / 8 * 32 + 53, 16, 11);
-                Vector2 detailPosition = basePosition + new Vector2(0, 21 * scale);
-                batch.Draw(sheet, basePosition, baseSource, choice * opacity, 0f, Vector2.Zero,
-                    scale, SpriteEffects.None, 0.91f);
-                batch.Draw(sheet, basePosition, lidColorSource, choice * opacity, 0f, Vector2.Zero,
-                    scale, SpriteEffects.None, 0.91f);
-                batch.Draw(sheet, detailPosition, detailSource, Color.White * opacity, 0f, Vector2.Zero,
-                    scale, SpriteEffects.None, 0.91f);
-                batch.Draw(sheet, basePosition, lidWhiteSource, Color.White * opacity, 0f, Vector2.Zero,
-                    scale, SpriteEffects.None, 0.91f);
-                return;
-            }
-            Rectangle plainBase = Game1.getSourceRectForStandardTileSheet(sheet, baseIndex, 16, 32);
-            Rectangle plainLid = Game1.getSourceRectForStandardTileSheet(sheet, lidIndex, 16, 32);
-            batch.Draw(sheet, basePosition, plainBase, tint * opacity, 0f, Vector2.Zero,
-                scale, SpriteEffects.None, 0.91f);
-            batch.Draw(sheet, basePosition, plainLid, tint * opacity, 0f, Vector2.Zero,
-                scale, SpriteEffects.None, 0.91f);
-        }
-        catch
-        {
-            UiStyle.DrawIcon(batch, UiStyle.InventoryIcon, position, 2, opacity);
-        }
-    }
-
-    private static int? GetIconSpriteIndex(Item item)
-        // Object menu sprites support per-instance indices. Tools use the registry's
-        // default sprite; their legacy ParentSheetIndex addresses a different layout.
-        => item is StardewValley.Object ? item.ParentSheetIndex : null;
 }
