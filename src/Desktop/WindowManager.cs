@@ -40,6 +40,7 @@ internal sealed class WindowManager
         LivestockWindow.WindowId,
         SocialWindow.WindowId,
         MiningLedgerWindow.WindowId,
+        BundlesWindow.WindowId,
         NotificationsWindow.WindowId,
         ChatWindow.WindowId,
     };
@@ -66,6 +67,10 @@ internal sealed class WindowManager
     private (int Version, InventoryWindow Source, InventoryWindow Target)? pendingTransfer;
     private bool HasPendingTransfer => pendingTransfer.HasValue;
     private int transferVersion;
+    private readonly HashSet<Item> cutItems = new(ReferenceEqualityComparer.Instance);
+    private InventoryWindow? cutSource;
+    private Chest? cutSourceChest;
+    private bool HasCut => cutSource != null && cutItems.Count > 0;
     private KeyboardDispatcher? keyboardDispatcher;
     private static readonly SButton[] KeyboardButtons = Enum.GetValues<SButton>()
         .Where(button => button.TryGetKeyboard(out _)).ToArray();
@@ -85,15 +90,28 @@ internal sealed class WindowManager
 
     internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(config, saveConfig, lookupAnything, getMovement, FocusWorld));
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
-    internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything, getTradeShop: GetTradeShop));
+    internal void OpenInventory()
+    {
+        Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything, getTradeShop: GetTradeShop));
+        if (windows.FirstOrDefault(window => window.Id == InventoryWindow.WindowId) is InventoryWindow inventory)
+            AssignCutPredicate(inventory);
+    }
     internal void OpenLivestock() => Open(LivestockWindow.WindowId, () => new LivestockWindow());
     internal void OpenSocial() => Open(SocialWindow.WindowId, () => new SocialWindow(lookupAnything, OpenLookup));
     internal void OpenMiningLedger(MiningLedger ledger) => Open(MiningLedgerWindow.WindowId, () => new MiningLedgerWindow(ledger));
+    internal void OpenBundles() => Open(BundlesWindow.WindowId, () => new BundlesWindow(lookupAnything));
     internal void OpenChestInventory(Chest chest)
     {
         Open(InventoryWindow.ChestWindowId, () => new InventoryWindow(config, chest, lookupAnything, GetTradeShop));
         if (windows.FirstOrDefault(window => window.Id == InventoryWindow.ChestWindowId) is InventoryWindow chestWindow)
+        {
+            AssignCutPredicate(chestWindow);
             chestWindow.ShowChest(chest);
+            // Switching chests cancels a chest-sourced cut; a backpack cut survives.
+            if (cutSource != null && ReferenceEquals(cutSource, chestWindow)
+                && !ReferenceEquals(cutSourceChest, chestWindow.Chest))
+                ClearCut();
+        }
     }
     internal void OpenTrade(ShopMenu shop)
     {
@@ -204,6 +222,7 @@ internal sealed class WindowManager
                         case LivestockWindow.WindowId: OpenLivestock(); break;
                         case SocialWindow.WindowId: OpenSocial(); break;
                         case MiningLedgerWindow.WindowId: OpenMiningLedger(ledger); break;
+                        case BundlesWindow.WindowId: OpenBundles(); break;
                         case NotificationsWindow.WindowId: OpenNotifications(notifications); break;
                         case ChatWindow.WindowId: OpenChat(chat); break;
                         default: continue;
@@ -425,6 +444,7 @@ internal sealed class WindowManager
             window.Close();
         windows.Clear();
         tabGroups.Clear();
+        ClearCut();
     }
 
     internal bool IsContextMenuOpen => contextMenu.IsOpen;
@@ -796,6 +816,7 @@ internal sealed class WindowManager
             RememberOpenWindows();
             RememberTabGroups();
         }
+        PruneCut();
         contextMenu.Update();
         if (!CanReceiveInput)
             contextMenu.Close();
@@ -1141,6 +1162,83 @@ internal sealed class WindowManager
         // An invalid/removed chest may never tick its mutex again. Let the UI proceed;
         // any late acquisition still validates its version and releases without moving items.
         pendingTransfer = null;
+    }
+
+    private void AssignCutPredicate(InventoryWindow window)
+    {
+        InventoryWindow captured = window;
+        captured.IsCut = item => ReferenceEquals(captured, cutSource) && cutItems.Contains(item);
+    }
+
+    private void ClearCut()
+    {
+        cutItems.Clear();
+        cutSource = null;
+        cutSourceChest = null;
+    }
+
+    private void PruneCut()
+    {
+        if (cutSource == null || cutItems.Count == 0)
+        {
+            ClearCut();
+            return;
+        }
+        if (!cutSource.IsValid || !windows.Contains(cutSource) || !ReferenceEquals(cutSource.Chest, cutSourceChest))
+        {
+            ClearCut();
+            return;
+        }
+        IList<Item> live = cutSourceChest?.GetItemsForPlayer() ?? Game1.player.Items;
+        cutItems.RemoveWhere(item => InventoryTransferBatch.IndexOf(live, item) < 0);
+        if (cutItems.Count == 0)
+            ClearCut();
+    }
+
+    private bool TryCutFocusedInventory(InventoryWindow focused)
+    {
+        if (HasPendingTransfer)
+            return true;
+        EndDrag();
+        Item[] selected = focused.SelectedItems;
+        if (selected.Length == 0)
+            return true;
+        ClearCut();
+        cutSource = focused;
+        cutSourceChest = focused.Chest;
+        foreach (Item item in selected)
+            cutItems.Add(item);
+        focused.TransferStatus = $"Cut {selected.Length} stack{(selected.Length == 1 ? "" : "s")} — paste to move.";
+        return true;
+    }
+
+    private bool TryPasteIntoFocusedInventory(InventoryWindow target)
+    {
+        if (HasPendingTransfer)
+            return true;
+        PruneCut();
+        if (!HasCut || cutSource == null)
+        {
+            target.TransferStatus = "Nothing to paste.";
+            return true;
+        }
+        if (ReferenceEquals(cutSource, target) && ReferenceEquals(cutSourceChest, target.Chest))
+            return true;
+        bool sourceIsChest = cutSourceChest != null;
+        bool targetIsChest = target.Chest != null;
+        if (sourceIsChest == targetIsChest)
+        {
+            target.TransferStatus = "Can't paste here.";
+            return true;
+        }
+        if (!cutSource.IsValid || !target.IsValid || !Context.IsPlayerFree)
+        {
+            target.TransferStatus = "Can't paste here.";
+            return true;
+        }
+        EndDrag();
+        TransferItems(cutSource, target, cutItems.ToArray());
+        return true;
     }
 
     private void TransferItems(InventoryWindow source, InventoryWindow target, Item[] requested)
@@ -1672,8 +1770,23 @@ internal sealed class WindowManager
                 return true;
             }
         }
-        if (CanReceiveInput && button == SButton.Escape && (itemDragSource != null || HasPendingTransfer))
+        if (CanReceiveInput && !contextMenu.IsOpen && Game1.game1.HasKeyboardFocus()
+            && (button == SButton.X || button == SButton.V)
+            && (IsHeld(input, SButton.LeftControl) || IsHeld(input, SButton.RightControl))
+            && focusedWindow is { IsValid: true, IsMinimized: false } clipWindow
+            && drawnWindows.Contains(clipWindow) && IsFrontmost(clipWindow))
         {
+            // Trade is ignored; only backpack/chest inventories support cut/paste.
+            if (clipWindow is InventoryWindow clipInventory)
+            {
+                if (button == SButton.X)
+                    return TryCutFocusedInventory(clipInventory);
+                return TryPasteIntoFocusedInventory(clipInventory);
+            }
+        }
+        if (CanReceiveInput && button == SButton.Escape && (itemDragSource != null || HasPendingTransfer || HasCut))
+        {
+            ClearCut();
             CancelPendingTransfer();
             EndDrag();
             return true;

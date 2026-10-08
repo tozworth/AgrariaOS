@@ -159,7 +159,8 @@ internal sealed class GridView<TRow> where TRow : class
     }
 
     internal void Draw(SpriteBatch batch, Rectangle bounds, int rowHeight, ModConfig config, Point cursor,
-        string emptyText, Func<TRow, bool>? isSelected = null, string? footerText = null)
+        string emptyText, Func<TRow, bool>? isSelected = null, string? footerText = null,
+        Func<TRow, bool>? isDimmed = null)
     {
         if (!Layout(bounds, rowHeight, reserveFooter: !string.IsNullOrEmpty(footerText)))
         {
@@ -181,6 +182,16 @@ internal sealed class GridView<TRow> where TRow : class
         }
         batch.Draw(Game1.staminaRect, new Rectangle(RowsBounds.X, RowsBounds.Y - 1, RowsBounds.Width, 1), UiStyle.Border * config.Opacity);
 
+        ModConfig? dimmedConfig = null;
+        if (isDimmed != null)
+        {
+            dimmedConfig = new ModConfig
+            {
+                Opacity = config.Opacity * 0.5f,
+                TextScale = config.TextScale,
+                PixelPerfectText = config.PixelPerfectText,
+            };
+        }
         for (int i = layoutFirstRow; i < layoutEndRow; i++)
         {
             Rectangle row = new(RowsBounds.X, RowsBounds.Y + (i - layoutFirstRow) * rowHeight, RowsBounds.Width, rowHeight);
@@ -190,8 +201,9 @@ internal sealed class GridView<TRow> where TRow : class
                 batch.Draw(Game1.staminaRect, row, UiStyle.Border * (config.Opacity * 0.55f));
             else if ((i & 1) != 0)
                 batch.Draw(Game1.staminaRect, row, Color.White * (config.Opacity * 0.025f));
+            ModConfig rowConfig = isDimmed?.Invoke(rows[i]) == true && dimmedConfig != null ? dimmedConfig : config;
             foreach (int column in visibleColumns)
-                columns[column].DrawCell(batch, rows[i], new Rectangle(headers[column].X, row.Y, headers[column].Width, row.Height), config);
+                columns[column].DrawCell(batch, rows[i], new Rectangle(headers[column].X, row.Y, headers[column].Width, row.Height), rowConfig);
         }
 
         if (rows.Count == 0)

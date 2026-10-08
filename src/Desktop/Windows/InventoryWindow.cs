@@ -32,6 +32,7 @@ internal sealed class InventoryWindow : OsWindow
 
     internal Chest? Chest => chest;
     internal string? TransferStatus { get; set; }
+    internal Func<Item, bool>? IsCut { get; set; }
     internal bool ContainsDropPoint(Point cursor) => grid.RowsBounds.Contains(cursor);
     internal Item[] SelectedItems => selection.InSlotOrder((chest?.GetItemsForPlayer() ?? Game1.player.Items)
         .Where(item => item != null).ToArray());
@@ -104,7 +105,7 @@ internal sealed class InventoryWindow : OsWindow
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
         grid.Draw(batch, contentBounds, grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding),
             config, cursor, chest == null ? "Backpack empty." : "Chest empty.", selection.Contains,
-            footer);
+            footer, isDimmed: IsCut);
     }
 
     internal Item? SelectRow(Point cursor, bool control, bool shift)

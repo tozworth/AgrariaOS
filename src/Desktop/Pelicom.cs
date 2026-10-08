@@ -17,14 +17,15 @@ internal sealed class Pelicom : IClickableMenu
     private const int IconSize = 9;
     private const int IconScale = 3;
     private const int OverviewEntryIndex = 0;
-    private const int MailEntryIndex = 6;
+    private const int BundlesEntryIndex = 5;
+    private const int MailEntryIndex = 7;
     private const int InventoryEntryIndex = 1;
     private const int LivestockEntryIndex = 2;
     private const int SocialEntryIndex = 3;
     private const int MiningEntryIndex = 4;
-    private const int ChatEntryIndex = 7;
-    private const int NotificationsEntryIndex = 8;
-    private const int ExitEntryIndex = 9;
+    private const int ChatEntryIndex = 8;
+    private const int NotificationsEntryIndex = 9;
+    private const int ExitEntryIndex = 10;
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Overview"),
@@ -32,6 +33,7 @@ internal sealed class Pelicom : IClickableMenu
         (74, "Livestock"),
         (UiStyle.SocialIcon, "Social"),
         (121, "Mining Ledger"),
+        (84, "Bundles"),
         (41, "Wallet"),
         (UiStyle.MailIcon, "Mail"),
         (UiStyle.ChatIcon, "Chat"),
@@ -58,6 +60,9 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Action<Point, ContextMenuItem[]> showContextMenu;
     private readonly Action openMiningLedger;
     private readonly Func<bool> isMiningLedgerMinimized;
+    private readonly Action openBundles;
+    private readonly Func<bool> isBundlesMinimized;
+    private readonly Func<bool> isBundlesAvailable;
     private readonly Action openOverview;
     private readonly Func<bool> isOverviewMinimized;
     private bool autoHideChecked;
@@ -72,6 +77,7 @@ internal sealed class Pelicom : IClickableMenu
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
         Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
         Action openMiningLedger, Func<bool> isMiningLedgerMinimized,
+        Action openBundles, Func<bool> isBundlesMinimized, Func<bool> isBundlesAvailable,
         Action openOverview, Func<bool> isOverviewMinimized, Action saveConfig)
     {
         this.config = config;
@@ -93,6 +99,9 @@ internal sealed class Pelicom : IClickableMenu
         this.showContextMenu = showContextMenu;
         this.openMiningLedger = openMiningLedger;
         this.isMiningLedgerMinimized = isMiningLedgerMinimized;
+        this.openBundles = openBundles;
+        this.isBundlesMinimized = isBundlesMinimized;
+        this.isBundlesAvailable = isBundlesAvailable;
         this.openOverview = openOverview;
         this.isOverviewMinimized = isOverviewMinimized;
         this.saveConfig = saveConfig;
@@ -105,7 +114,7 @@ internal sealed class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Overview, Inventory, Livestock, Social, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
+    // Overview, Inventory, Livestock, Social, Mining Ledger, Bundles, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         if (!IsInteractive || !drawnBounds.Contains(x, y))
@@ -122,6 +131,8 @@ internal sealed class Pelicom : IClickableMenu
             openSocial();
         else if (drawnSlots[MiningEntryIndex].Contains(x, y))
             openMiningLedger();
+        else if (drawnSlots[BundlesEntryIndex].Contains(x, y))
+            openBundles();
         else if (drawnSlots[NotificationsEntryIndex].Contains(x, y))
             openNotifications();
         else if (drawnSlots[ChatEntryIndex].Contains(x, y))
@@ -223,11 +234,19 @@ internal sealed class Pelicom : IClickableMenu
         if (horizontal && startLimit >= TopPadding && clockSize.Y + 1 <= strip.Height)
             UiText.Draw(batch, clock, new Vector2(separator - TopPadding - clockSize.X,
                 strip.Y + (strip.Height - clockSize.Y) / 2), UiStyle.Primary, config, scale: 1f);
+        bool showBundles;
+        try { showBundles = isBundlesAvailable(); }
+        catch { showBundles = false; }
+        int topOffset = TopPadding;
         for (int i = 0; i < Entries.Length; i++)
         {
+            if (i == BundlesEntryIndex && !showBundles)
+                continue;
             bool isBottomEntry = i >= Entries.Length - BottomEntryCount;
             int offset = isBottomEntry ? endGroup + (i - (Entries.Length - BottomEntryCount)) * SlotHeight
-                : TopPadding + i * SlotHeight;
+                : topOffset;
+            if (!isBottomEntry)
+                topOffset += SlotHeight;
             Rectangle slot = horizontal ? new Rectangle(offset, strip.Y, SlotHeight, StripWidth - 1)
                 : new Rectangle(strip.X, offset, StripWidth - 1, SlotHeight);
             // On unusually short viewports, keep the bottom group clear of the top entries.
@@ -246,6 +265,7 @@ internal sealed class Pelicom : IClickableMenu
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
             if ((i == OverviewEntryIndex && isOverviewMinimized()) || (i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
                 || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == SocialEntryIndex && isSocialMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
+                || (i == BundlesEntryIndex && isBundlesMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
                 || (i == ChatEntryIndex && isChatMinimized()))
                 batch.Draw(Game1.staminaRect, horizontal ? new Rectangle(slot.X + 8,

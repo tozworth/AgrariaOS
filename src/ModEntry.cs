@@ -50,6 +50,9 @@ public sealed partial class ModEntry : Mod
         (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items),
         () => Instance.windowManager.Value.OpenMiningLedger(Instance.miningLedger),
         () => Instance.windowManager.Value.IsMinimized(MiningLedgerWindow.WindowId),
+        () => Instance.windowManager.Value.OpenBundles(),
+        () => Instance.windowManager.Value.IsMinimized(BundlesWindow.WindowId),
+        () => BundlesWindow.IsAvailable(),
         () => Instance.windowManager.Value.OpenOverview(),
         () => Instance.windowManager.Value.IsMinimized(OverviewWindow.WindowId),
         () => Instance.Helper.WriteConfig(Instance.config)));

@@ -21,7 +21,8 @@ In the window's `DrawContent`:
    reordered. Pass source rows in their natural order on every refresh.
 3. Refresh window-owned selection against `grid.Rows`.
 4. Call `Draw` with content bounds, row height, config, cursor, empty-state text,
-   and optional selection predicate/footer text. `GetRowHeight` accounts for the
+   and optional selection predicate/footer text plus an optional dim predicate
+   for cut/clipboard rows. `GetRowHeight` accounts for the
    font's actual glyph heights and an optional icon-height minimum.
 
 Forward content clicks, drags, drag completion, and wheel input to `ReceiveClick`,
