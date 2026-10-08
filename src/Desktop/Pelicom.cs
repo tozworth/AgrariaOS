@@ -24,8 +24,9 @@ internal sealed class Pelicom : IClickableMenu
     private const int SocialEntryIndex = 3;
     private const int MiningEntryIndex = 4;
     private const int ChatEntryIndex = 8;
-    private const int NotificationsEntryIndex = 9;
-    private const int ExitEntryIndex = 10;
+    private const int NotesEntryIndex = 9;
+    private const int NotificationsEntryIndex = 10;
+    private const int ExitEntryIndex = 11;
     private static readonly (int Emoji, string Label)[] Entries =
     {
         (107, "Overview"),
@@ -37,6 +38,7 @@ internal sealed class Pelicom : IClickableMenu
         (41, "Wallet"),
         (UiStyle.MailIcon, "Mail"),
         (UiStyle.ChatIcon, "Chat"),
+        (139, "Notes"),
         (UiStyle.NotificationIcon, "Notifications"),
         (131, "Exit")
     };
@@ -57,6 +59,8 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Func<int> unreadNotifications;
     private readonly Action openChat;
     private readonly Func<bool> isChatMinimized;
+    private readonly Action openNotes;
+    private readonly Func<bool> isNotesMinimized;
     private readonly Action<Point, ContextMenuItem[]> showContextMenu;
     private readonly Action openMiningLedger;
     private readonly Func<bool> isMiningLedgerMinimized;
@@ -69,13 +73,19 @@ internal sealed class Pelicom : IClickableMenu
     private readonly Action saveConfig;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
+    // The strip draws inside Game1.drawHUD via onScreenMenus, so its hover tip would sit
+    // below desktop windows drawn later in RenderedHud. Remember the tip and replay it
+    // above windows through DrawTooltip.
+    private Rectangle pendingTooltip;
+    private string pendingTooltipLabel = "";
 
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
         Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized,
         Action openLivestock, Func<bool> isLivestockMinimized,
         Action openSocial, Func<bool> isSocialMinimized,
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
-        Action openChat, Func<bool> isChatMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
+        Action openChat, Func<bool> isChatMinimized,
+        Action openNotes, Func<bool> isNotesMinimized, Action<Point, ContextMenuItem[]> showContextMenu,
         Action openMiningLedger, Func<bool> isMiningLedgerMinimized,
         Action openBundles, Func<bool> isBundlesMinimized, Func<bool> isBundlesAvailable,
         Action openOverview, Func<bool> isOverviewMinimized, Action saveConfig)
@@ -96,6 +106,8 @@ internal sealed class Pelicom : IClickableMenu
         this.unreadNotifications = unreadNotifications;
         this.openChat = openChat;
         this.isChatMinimized = isChatMinimized;
+        this.openNotes = openNotes;
+        this.isNotesMinimized = isNotesMinimized;
         this.showContextMenu = showContextMenu;
         this.openMiningLedger = openMiningLedger;
         this.isMiningLedgerMinimized = isMiningLedgerMinimized;
@@ -114,7 +126,7 @@ internal sealed class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Overview, Inventory, Livestock, Social, Mining Ledger, Bundles, Mail, Chat and Notifications open desktop windows; Exit terminates the game.
+    // Overview, Inventory, Livestock, Social, Mining Ledger, Bundles, Mail, Chat, Notes and Notifications open desktop windows; Exit terminates the game.
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         if (!IsInteractive || !drawnBounds.Contains(x, y))
@@ -137,6 +149,8 @@ internal sealed class Pelicom : IClickableMenu
             openNotifications();
         else if (drawnSlots[ChatEntryIndex].Contains(x, y))
             openChat();
+        else if (drawnSlots[NotesEntryIndex].Contains(x, y))
+            openNotes();
         else if (drawnSlots[ExitEntryIndex].Contains(x, y))
             // Terminate immediately without entering the game's save or shutdown flow.
             Environment.Exit(0);
@@ -185,6 +199,8 @@ internal sealed class Pelicom : IClickableMenu
     {
         drawnBounds = Rectangle.Empty;
         Array.Clear(drawnSlots);
+        pendingTooltip = Rectangle.Empty;
+        pendingTooltipLabel = "";
         if (!IsVisible)
             return;
 
@@ -195,8 +211,36 @@ internal sealed class Pelicom : IClickableMenu
         catch (Exception ex)
         {
             drawnBounds = Rectangle.Empty;
+            pendingTooltip = Rectangle.Empty;
+            pendingTooltipLabel = "";
             onDrawFailed(ex);
         }
+    }
+
+    // Replays the hover tip computed by the last draw above desktop windows.
+    // WindowManager invokes this after its frames but before the context menu.
+    internal void DrawTooltip(SpriteBatch batch)
+    {
+        if (pendingTooltip.IsEmpty || string.IsNullOrEmpty(pendingTooltipLabel))
+            return;
+        if (!IsInteractive)
+            return;
+        try
+        {
+            DrawTooltipRect(batch, pendingTooltip, pendingTooltipLabel);
+        }
+        catch (Exception ex)
+        {
+            pendingTooltip = Rectangle.Empty;
+            pendingTooltipLabel = "";
+            onDrawFailed(ex);
+        }
+    }
+
+    private void DrawTooltipRect(SpriteBatch batch, Rectangle tooltip, string label)
+    {
+        batch.Draw(Game1.staminaRect, tooltip, UiStyle.Background * config.Opacity);
+        UiText.Draw(batch, label, new Vector2(tooltip.X + 6, tooltip.Y + 2), Color.White, config);
     }
 
     private void DrawStrip(SpriteBatch batch)
@@ -267,7 +311,8 @@ internal sealed class Pelicom : IClickableMenu
                 || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == SocialEntryIndex && isSocialMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
                 || (i == BundlesEntryIndex && isBundlesMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
-                || (i == ChatEntryIndex && isChatMinimized()))
+                || (i == ChatEntryIndex && isChatMinimized())
+                || (i == NotesEntryIndex && isNotesMinimized()))
                 batch.Draw(Game1.staminaRect, horizontal ? new Rectangle(slot.X + 8,
                     edge == PelicomEdge.Top ? slot.Bottom - 2 : slot.Y + 1, SlotHeight - 16, 1)
                     : new Rectangle(edge == PelicomEdge.Left ? slot.X + 1 : slot.Right - 2, slot.Y + 8, 1, SlotHeight - 16),
@@ -298,8 +343,9 @@ internal sealed class Pelicom : IClickableMenu
                 : hoveredSlot.Y + (SlotHeight - height) / 2;
             Rectangle tooltip = new(Math.Clamp(x, 0, Math.Max(0, Game1.uiViewport.Width - width)),
                 Math.Clamp(y, 0, Math.Max(0, Game1.uiViewport.Height - height)), width, height);
-            batch.Draw(Game1.staminaRect, tooltip, UiStyle.Background * config.Opacity);
-            UiText.Draw(batch, label, new Vector2(tooltip.X + 6, tooltip.Y + 2), Color.White, config);
+            pendingTooltip = tooltip;
+            pendingTooltipLabel = label;
+            DrawTooltipRect(batch, tooltip, label);
         }
 
         drawnBounds = strip;

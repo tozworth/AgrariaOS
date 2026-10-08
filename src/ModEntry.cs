@@ -47,6 +47,8 @@ public sealed partial class ModEntry : Mod
         () => Instance.notificationHistory.Value.UnreadCount,
         () => Instance.windowManager.Value.OpenChat(Instance.chatHistory.Value),
         () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId),
+        () => Instance.windowManager.Value.OpenNotes(),
+        () => Instance.windowManager.Value.IsMinimized(NotesWindow.WindowId),
         (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items),
         () => Instance.windowManager.Value.OpenMiningLedger(Instance.miningLedger),
         () => Instance.windowManager.Value.IsMinimized(MiningLedgerWindow.WindowId),
@@ -107,7 +109,7 @@ public sealed partial class ModEntry : Mod
             if (UsePelicom && windowManager.Value.ReceiveScroll(cursor, e.Delta))
                 helper.Input.SuppressScrollWheel();
         };
-        helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch);
+        helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch, batch => pelicom.Value.DrawTooltip(batch));
         helper.Events.Display.RenderedWorld += (_, e) =>
         {
             DrawHoverHighlight(e.SpriteBatch);
@@ -349,7 +351,9 @@ public sealed partial class ModEntry : Mod
             return;
         }
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-        hardwareCursor.Update(windowManager.Value.GetResizeCursorEdges(cursor));
+        WindowResizeEdges edges = windowManager.Value.GetResizeCursorEdges(cursor);
+        bool textField = edges == WindowResizeEdges.None && windowManager.Value.IsTextFieldHovered(cursor);
+        hardwareCursor.Update(edges, textField);
     }
 
     private void OnPelicomDrawFailed(Exception ex)

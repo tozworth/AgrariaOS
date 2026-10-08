@@ -154,12 +154,15 @@ internal sealed class TreeView
 
             Color color = node.IsComplete ? UiStyle.Muted : UiStyle.Primary;
             int chevronX = row.X + depth * Indent;
+            int textX = chevronX;
             if (node.Children.Count > 0)
             {
                 string chevron = IsExpanded(node) ? "v" : ">";
                 UiText.Draw(batch, chevron, new Vector2(chevronX, row.Y + (row.Height - Game1.smallFont.MeasureString(chevron).Y * config.FontScale) / 2), color, config);
+                textX += ChevronWidth;
             }
-            Rectangle labelBounds = new(chevronX + ChevronWidth, row.Y, Math.Max(0, row.Right - chevronX - ChevronWidth), row.Height);
+            // Leaf nodes take the full row, so roots without children render as a flat list.
+            Rectangle labelBounds = new(textX, row.Y, Math.Max(0, row.Right - textX), row.Height);
             UiText.DrawCell(batch, node.Label, labelBounds, color, config);
             if (node.IsComplete)
             {
@@ -185,6 +188,17 @@ internal sealed class TreeView
             batch.Draw(Game1.staminaRect, scrollTrack, UiStyle.Border * (config.Opacity * 0.45f));
             batch.Draw(Game1.staminaRect, scrollThumb, UiStyle.Muted * config.Opacity);
         }
+    }
+
+    // Hit testing for context menus (e.g. right-clicking a row without selecting it first).
+    internal TreeNode? GetNodeAt(Point cursor)
+    {
+        if (RowsBounds.IsEmpty || rowHeight <= 0 || !RowsBounds.Contains(cursor))
+            return null;
+        int index = layoutFirstRow + (cursor.Y - RowsBounds.Y) / rowHeight;
+        if (index < layoutFirstRow || index >= layoutEndRow)
+            return null;
+        return visible[index].Node;
     }
 
     internal bool ReceiveClick(Point cursor, bool leftClick)

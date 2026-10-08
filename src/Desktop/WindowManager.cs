@@ -43,6 +43,7 @@ internal sealed class WindowManager
         BundlesWindow.WindowId,
         NotificationsWindow.WindowId,
         ChatWindow.WindowId,
+        NotesWindow.WindowId,
     };
     private readonly List<OsWindow> drawnWindows = new();
     private readonly ContextMenu contextMenu = new();
@@ -133,6 +134,8 @@ internal sealed class WindowManager
         pendingBuys.Clear();
     }
     internal void OpenNotifications(NotificationHistory history) => Open(NotificationsWindow.WindowId, () => new NotificationsWindow(history));
+    internal void OpenNotes() => Open(NotesWindow.WindowId,
+        () => new NotesWindow(config, saveConfig, (cursor, items) => ShowContextMenu(cursor, items)));
     internal void OpenChat(ChatSession session, bool showLocal = false)
     {
         Open(ChatWindow.WindowId, () => new ChatWindow(session, config, saveConfig));
@@ -225,6 +228,7 @@ internal sealed class WindowManager
                         case BundlesWindow.WindowId: OpenBundles(); break;
                         case NotificationsWindow.WindowId: OpenNotifications(notifications); break;
                         case ChatWindow.WindowId: OpenChat(chat); break;
+                        case NotesWindow.WindowId: OpenNotes(); break;
                         default: continue;
                     }
                     if (state.IsMinimized && windows.FirstOrDefault(window => window.Id == state.Id) is { } opened)
@@ -450,6 +454,12 @@ internal sealed class WindowManager
     internal bool IsContextMenuOpen => contextMenu.IsOpen;
 
     internal bool IsOverWindow(Point cursor) => GetWindowAt(cursor) != null;
+
+    internal bool IsTextFieldHovered(Point cursor)
+    {
+        try { return GetWindowAt(cursor) is { } window && window.IsTextFieldAt(cursor); }
+        catch { return false; }
+    }
 
     // Focus, not visibility, owns the pause. Background windows can stay open while playing.
     internal bool HasDesktopFocus => isVisible() && !Game1.IsChatting
@@ -1609,7 +1619,7 @@ internal sealed class WindowManager
         EndDrag();
     }
 
-    internal void Draw(SpriteBatch batch)
+    internal void Draw(SpriteBatch batch, Action<SpriteBatch>? overlay = null)
     {
         drawnWindows.Clear();
         if (!isVisible())
@@ -1709,6 +1719,9 @@ internal sealed class WindowManager
                 else if (itemDragSource is TradeWindow dragTrade)
                     dragTrade.DrawItemDrag(batch, cursor, draggedItems, valid, config);
             }
+            // Overlays (e.g. the Pelicom hover tip, drawn earlier below these frames)
+            // replay above windows but below the context menu.
+            overlay?.Invoke(batch);
             contextMenu.Draw(batch, config, cursor);
         }
         catch (Exception ex)

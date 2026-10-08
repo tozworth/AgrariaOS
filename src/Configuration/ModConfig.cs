@@ -4,6 +4,23 @@ namespace AgrariaOS.Configuration;
 
 public enum PelicomEdge { Left, Right, Top, Bottom }
 
+public sealed class TodoRecord
+{
+    public string Id { get; set; } = "";
+    public string Text { get; set; } = "";
+    public bool Done { get; set; }
+}
+
+public sealed class NoteRecord
+{
+    public string Id { get; set; } = "";
+    // "note" is flat text; "todo" is a checklist.
+    public string Kind { get; set; } = "note";
+    public string Title { get; set; } = "";
+    public string Body { get; set; } = "";
+    public List<TodoRecord> Items { get; set; } = new();
+}
+
 public sealed class ModConfig
 {
     public bool Enabled { get; set; } = true;
@@ -32,6 +49,8 @@ public sealed class ModConfig
     public Dictionary<long, Dictionary<string, string[]>> WindowHiddenColumns { get; set; } = new();
     public Dictionary<long, Dictionary<string, Dictionary<string, int>>> WindowColumnWidths { get; set; } = new();
     public Dictionary<long, Dictionary<string, string[]>> OverviewHiddenCategories { get; set; } = new();
+    // Player notes and to-do lists, per farmer.
+    public Dictionary<long, List<NoteRecord>> Notes { get; set; } = new();
 
     internal void Normalize()
     {
@@ -130,6 +149,53 @@ public sealed class ModConfig
                 WindowTabGroups.Remove(farmerId);
             else
                 WindowTabGroups[farmerId] = cleaned;
+        }
+        Notes ??= new();
+        foreach (long farmerId in Notes.Keys.ToArray())
+        {
+            List<NoteRecord>? docs = Notes[farmerId];
+            if (docs == null)
+            {
+                Notes.Remove(farmerId);
+                continue;
+            }
+            var seenDocs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (NoteRecord? doc in docs.ToArray())
+            {
+                if (doc == null)
+                {
+                    docs.Remove(doc!);
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(doc.Id))
+                    doc.Id = Guid.NewGuid().ToString("N");
+                if (!seenDocs.Add(doc.Id))
+                {
+                    docs.Remove(doc);
+                    continue;
+                }
+                if (doc.Kind != "todo")
+                    doc.Kind = "note";
+                doc.Title ??= "";
+                doc.Body ??= "";
+                doc.Items ??= new();
+                var seenItems = new HashSet<string>(StringComparer.Ordinal);
+                foreach (TodoRecord? item in doc.Items.ToArray())
+                {
+                    if (item == null)
+                    {
+                        doc.Items.Remove(item!);
+                        continue;
+                    }
+                    if (string.IsNullOrWhiteSpace(item.Id))
+                        item.Id = Guid.NewGuid().ToString("N");
+                    if (!seenItems.Add(item.Id))
+                        doc.Items.Remove(item);
+                    item.Text ??= "";
+                }
+            }
+            if (docs.Count == 0)
+                Notes.Remove(farmerId);
         }
         OverviewHiddenCategories ??= new();
         foreach (long farmerId in OverviewHiddenCategories.Keys.ToArray())

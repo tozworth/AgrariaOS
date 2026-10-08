@@ -7,9 +7,9 @@ internal sealed class HardwareCursor
 {
     private MouseCursor? appliedCursor;
 
-    internal void Update(WindowResizeEdges edges)
+    internal void Update(WindowResizeEdges edges, bool textField = false)
     {
-        MouseCursor? cursor = edges switch
+        MouseCursor? cursor = textField && edges == WindowResizeEdges.None ? MouseCursor.IBeam : edges switch
         {
             WindowResizeEdges.Left or WindowResizeEdges.Right => MouseCursor.SizeWE,
             WindowResizeEdges.Top or WindowResizeEdges.Bottom => MouseCursor.SizeNS,

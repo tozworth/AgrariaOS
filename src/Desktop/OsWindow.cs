@@ -157,6 +157,7 @@ internal abstract class OsWindow
     internal virtual void EndContentDrag() { }
     internal virtual void ReceiveScroll(int delta) { }
     internal virtual IKeyboardSubscriber? KeyboardSubscriber => null;
+    internal virtual bool IsTextFieldAt(Point cursor) => false;
     internal virtual void ReceiveKey(Keys key) { }
     internal virtual bool ReceiveShortcut(StardewModdingAPI.SButton button) => false;
     internal virtual void Update() { }
