@@ -21,6 +21,23 @@ internal record ApproachTarget(Rectangle Tiles, Func<bool> IsValid)
         }
     }
 
+    /// <summary>All walkable candidates within vanilla right-click reach (Chebyshev 1,
+    /// including diagonals). Vanilla's tileWithinRadiusOfPlayer allows diagonal
+    /// collection, but <see cref="ApproachTiles"/> is orthogonal-only for tool swings
+    /// which require Manhattan adjacency.</summary>
+    internal IEnumerable<Point> InteractTiles()
+    {
+        for (int x = Tiles.Left - 1; x <= Tiles.Right; x++)
+        {
+            for (int y = Tiles.Top - 1; y <= Tiles.Bottom; y++)
+            {
+                if (x >= Tiles.Left && x < Tiles.Right && y >= Tiles.Top && y < Tiles.Bottom)
+                    continue;
+                yield return new Point(x, y);
+            }
+        }
+    }
+
     internal Point HitTile(Point farmerTile) => new(Math.Clamp(farmerTile.X, Tiles.Left, Tiles.Right - 1),
         Math.Clamp(farmerTile.Y, Tiles.Top, Tiles.Bottom - 1));
 

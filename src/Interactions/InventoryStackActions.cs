@@ -4,6 +4,45 @@ namespace AgrariaOS.Interactions;
 
 internal static class InventoryStackActions
 {
+    internal sealed record MergeResult(int FullyMerged, int MovedUnits, bool TargetFull);
+
+    internal static MergeResult Merge(IList<Item> inventory, Item target, IEnumerable<Item> sources,
+        Action<Item> removeFullyMerged)
+    {
+        int fullyMerged = 0;
+        int movedUnits = 0;
+        foreach (Item source in sources.ToArray())
+        {
+            if (ReferenceEquals(source, target))
+                continue;
+            if (InventoryTransferBatch.IndexOf(inventory, source) < 0
+                || InventoryTransferBatch.IndexOf(inventory, target) < 0)
+                continue;
+            if (source.Stack <= 0 || !target.canStackWith(source))
+                continue;
+            if (target.Stack >= target.maximumStackSize())
+                break;
+            // Match farmer.addItemToInventory: target grows, source keeps the leftover.
+            int original = source.Stack;
+            int leftover = target.addToStack(source);
+            int moved = original - leftover;
+            if (moved <= 0)
+                continue;
+            movedUnits += moved;
+            if (leftover <= 0)
+            {
+                removeFullyMerged(source);
+                fullyMerged++;
+            }
+            else
+            {
+                source.Stack = leftover;
+            }
+        }
+        bool targetFull = target.Stack >= target.maximumStackSize();
+        return new MergeResult(fullyMerged, movedUnits, targetFull);
+    }
+
     internal static string? Split(IList<Item> inventory, int capacity, Item source, int amount)
     {
         if (InventoryTransferBatch.IndexOf(inventory, source) < 0)

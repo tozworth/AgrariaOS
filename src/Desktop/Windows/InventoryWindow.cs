@@ -130,6 +130,10 @@ internal sealed class InventoryWindow : OsWindow
 
     internal void CollapseSelection(Item item) => selection.SelectOnly(item);
 
+    internal Item? GetRowAt(Point cursor) => grid.GetRow(cursor);
+
+    internal Rectangle? GetRowBoundsAt(Point cursor) => grid.GetRowBounds(cursor);
+
     internal void SelectAll()
     {
         selection.SelectAll((chest?.GetItemsForPlayer() ?? Game1.player.Items)
@@ -163,6 +167,15 @@ internal sealed class InventoryWindow : OsWindow
         Color color = new Color(137, 221, 151) * config.Opacity;
         batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Y, rowsBounds.Width, 1), color);
         batch.Draw(Game1.staminaRect, new Rectangle(rowsBounds.X, rowsBounds.Bottom - 1, rowsBounds.Width, 1), color);
+    }
+
+    internal void DrawMergeTarget(SpriteBatch batch, Rectangle row, ModConfig config)
+    {
+        Color color = new Color(137, 221, 151) * config.Opacity;
+        batch.Draw(Game1.staminaRect, new Rectangle(row.X, row.Y, row.Width, 1), color);
+        batch.Draw(Game1.staminaRect, new Rectangle(row.X, row.Bottom - 1, row.Width, 1), color);
+        batch.Draw(Game1.staminaRect, new Rectangle(row.X, row.Y, 1, row.Height), color);
+        batch.Draw(Game1.staminaRect, new Rectangle(row.Right - 1, row.Y, 1, row.Height), color);
     }
 
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)

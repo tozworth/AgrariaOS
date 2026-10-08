@@ -54,4 +54,62 @@ internal static class TilePathfinder
         }
         return null;
     }
+
+    /// <summary>Closest reachable tile to an unreachable click. Runs the same A* toward the
+    /// desired tile while tracking the visited walkable tile with the smallest Manhattan
+    /// distance, then returns the path there. Returns null when already as close as possible.</summary>
+    internal static Stack<Point>? FindClosest(Point start, Point desired,
+        Func<Point, bool> canWalk, int limit = 20000)
+    {
+        int Estimate(Point tile) => Math.Abs(tile.X - desired.X) + Math.Abs(tile.Y - desired.Y);
+        PriorityQueue<(Point Tile, int Cost), int> open = new();
+        Dictionary<Point, int> costs = new() { [start] = 0 };
+        Dictionary<Point, Point> parents = new();
+        Dictionary<Point, bool> walkable = new();
+        open.Enqueue((start, 0), Estimate(start));
+        Point best = start;
+        int bestDist = Estimate(start);
+        int visited = 0;
+        while (open.TryDequeue(out var node, out _) && visited < limit)
+        {
+            if (costs[node.Tile] != node.Cost)
+                continue;
+            visited++;
+            int dist = Estimate(node.Tile);
+            // Only dequeued tiles are walkable (plus the start); the solid desired tile
+            // itself never becomes best because it is never enqueued.
+            if (dist < bestDist)
+            {
+                best = node.Tile;
+                bestDist = dist;
+                if (bestDist == 0)
+                    break;
+            }
+            foreach (Point direction in Directions)
+            {
+                Point next = node.Tile + direction;
+                int cost = node.Cost + 1;
+                if (costs.TryGetValue(next, out int previous) && previous <= cost)
+                    continue;
+                if (!walkable.TryGetValue(next, out bool allowed))
+                    walkable[next] = allowed = canWalk(next);
+                if (!allowed)
+                    continue;
+                costs[next] = cost;
+                parents[next] = node.Tile;
+                open.Enqueue((next, cost), cost + Estimate(next));
+            }
+        }
+        if (best == start)
+            return null;
+        Stack<Point> path = new();
+        Point tile = best;
+        path.Push(tile);
+        while (parents.TryGetValue(tile, out Point parent))
+        {
+            path.Push(parent);
+            tile = parent;
+        }
+        return path;
+    }
 }

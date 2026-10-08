@@ -6,6 +6,7 @@ public sealed class ModConfig
 {
     public bool Enabled { get; set; } = true;
     public bool ClickToMove { get; set; } = true;
+    public bool HoverHighlight { get; set; } = true;
     public SButton ToggleKey { get; set; } = SButton.F8;
     public SButton OverviewKey { get; set; } = SButton.O;
     public int X { get; set; } = 24;
@@ -20,7 +21,10 @@ public sealed class ModConfig
     public bool ShowChatTimestamps { get; set; } = true;
     // Farmer IDs survive reloads and split-screen reconnects; screen IDs don't.
     public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
+    // Open windows (back-to-front) with minimized flags, per farmer. Chest and lookup windows are transient.
+    public Dictionary<long, List<WindowOpenState>> OpenWindows { get; set; } = new();
     public Dictionary<long, Dictionary<string, string[]>> WindowHiddenColumns { get; set; } = new();
+    public Dictionary<long, Dictionary<string, string[]>> OverviewHiddenCategories { get; set; } = new();
 
     internal void Normalize()
     {
@@ -55,6 +59,31 @@ public sealed class ModConfig
             foreach (string id in columns.Keys.ToArray())
                 columns[id] = (columns[id] ?? Array.Empty<string>())
                     .Where(column => !string.IsNullOrWhiteSpace(column)).Distinct(StringComparer.Ordinal).ToArray();
+        }
+        OpenWindows ??= new();
+        foreach (long farmerId in OpenWindows.Keys.ToArray())
+        {
+            List<WindowOpenState>? open = OpenWindows[farmerId];
+            if (open == null)
+            {
+                OpenWindows.Remove(farmerId);
+                continue;
+            }
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            OpenWindows[farmerId] = open.Where(state => state != null && !string.IsNullOrWhiteSpace(state.Id) && seen.Add(state.Id)).ToList();
+        }
+        OverviewHiddenCategories ??= new();
+        foreach (long farmerId in OverviewHiddenCategories.Keys.ToArray())
+        {
+            Dictionary<string, string[]>? tabs = OverviewHiddenCategories[farmerId];
+            if (tabs == null)
+            {
+                OverviewHiddenCategories.Remove(farmerId);
+                continue;
+            }
+            foreach (string id in tabs.Keys.ToArray())
+                tabs[id] = (tabs[id] ?? Array.Empty<string>())
+                    .Where(category => !string.IsNullOrWhiteSpace(category)).Distinct(StringComparer.Ordinal).ToArray();
         }
     }
 

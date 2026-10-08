@@ -7,3 +7,9 @@ public sealed record WindowPlacement
     public int Width { get; set; }
     public int Height { get; set; }
 }
+
+public sealed record WindowOpenState
+{
+    public string Id { get; set; } = "";
+    public bool IsMinimized { get; set; }
+}

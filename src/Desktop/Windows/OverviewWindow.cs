@@ -32,6 +32,10 @@ internal sealed class OverviewWindow : OsWindow
     private readonly LookupAnythingIntegration lookup;
     private readonly Func<ClickToMove> getMovement;
     private readonly Action releaseFocus;
+    private readonly ModConfig config;
+    private readonly Action saveConfig;
+    private readonly TabBar tabs = new(new WindowTab("General", "General"), new WindowTab("All", "All"));
+    private static readonly string[] GeneralDefaultHidden = new[] { "Bush", "Crop", "Furniture" };
     private readonly GridView<OverviewRow> grid = new(
         GridColumn<OverviewRow>.Create("Name", 264, 44, row => row.Name, row => row.Name,
             comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawNameCell, id: "name"),
@@ -49,8 +53,10 @@ internal sealed class OverviewWindow : OsWindow
     private GameLocation? staticLocation;
     private List<StaticTile> staticTiles = new();
 
-    internal OverviewWindow(LookupAnythingIntegration lookup, Func<ClickToMove> getMovement, Action releaseFocus)
+    internal OverviewWindow(ModConfig config, Action saveConfig, LookupAnythingIntegration lookup, Func<ClickToMove> getMovement, Action releaseFocus)
     {
+        this.config = config;
+        this.saveConfig = saveConfig;
         this.lookup = lookup;
         this.getMovement = getMovement;
         this.releaseFocus = releaseFocus;
@@ -66,7 +72,7 @@ internal sealed class OverviewWindow : OsWindow
                 return "";
             try
             {
-                int count = GetRows().Length;
+                int count = GetFilteredRows().Length;
                 return $"{Game1.currentLocation.Name} ({count})";
             }
             catch
@@ -79,18 +85,22 @@ internal sealed class OverviewWindow : OsWindow
     internal override Point DefaultSize => new(600, 420);
 
     protected override Point GetMinimumSize(ModConfig config)
-        => new(320, TitleHeight + 2 + Padding * 2 + grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding) * 3 + 1);
+        => new(320, TitleHeight + TabBar.Height(config) + 2 + Padding * 2 + grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding) * 3 + 1);
 
     protected override void DrawContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config)
     {
         OverviewRow[] rows;
         try { rows = GetRows(); }
         catch { rows = cachedRows; }
+        HashSet<string> hidden = GetHiddenSet(tabs.SelectedId);
+        if (hidden.Count > 0)
+            rows = rows.Where(row => !hidden.Contains(row.Category)).ToArray();
         grid.SetRows(rows);
-        if (selected != null && !selected.IsValid())
+        if (selected != null && (hidden.Contains(selected.Category) || !selected.IsValid()))
             selected = null;
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-        grid.Draw(batch, contentBounds, grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding),
+        Rectangle body = tabs.Draw(batch, contentBounds, config, cursor);
+        grid.Draw(batch, body, grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding),
             config, cursor, Context.IsWorldReady ? "No objects." : "No location.",
             isSelected: row => selected != null && row.StableKey == selected.StableKey);
     }
@@ -99,6 +109,13 @@ internal sealed class OverviewWindow : OsWindow
     {
         if (!leftClick)
             return;
+        string previousTab = tabs.SelectedId;
+        if (tabs.ReceiveClick(cursor))
+        {
+            if (tabs.SelectedId != previousTab)
+                grid.ResetScroll();
+            return;
+        }
         if (grid.ReceiveClick(cursor, leftClick))
             return;
         if (!Context.IsWorldReady)
@@ -137,6 +154,14 @@ internal sealed class OverviewWindow : OsWindow
 
     internal override ContextMenuItem[]? GetContextMenuItems(Point cursor)
     {
+        if (tabs.GetTabAt(cursor) is { } tabId)
+        {
+            string capturedTab = tabId;
+            return new ContextMenuItem[]
+            {
+                new("Restore to defaults", () => RestoreDefaults(capturedTab))
+            };
+        }
         if (grid.GetHeaderContextMenuItems(cursor) is { } columns)
             return columns;
         OverviewRow? row;
@@ -175,6 +200,9 @@ internal sealed class OverviewWindow : OsWindow
             }
             catch { }
         }));
+        string category = row.Category;
+        string currentTab = tabs.SelectedId;
+        items.Add(new ContextMenuItem($"Hide '{category}'", () => HideCategory(currentTab, category)));
         return items.ToArray();
     }
 
@@ -229,6 +257,75 @@ internal sealed class OverviewWindow : OsWindow
     internal override void DragContent(Point cursor) => grid.Drag(cursor);
     internal override void EndContentDrag() => grid.EndDrag();
     internal override void ReceiveScroll(int delta) => grid.ReceiveScroll(delta);
+
+    private static string[] GetTabDefaults(string tabId)
+        => tabId == "General" ? GeneralDefaultHidden : Array.Empty<string>();
+
+    private HashSet<string> GetHiddenSet(string tabId)
+    {
+        try
+        {
+            string[] defaults = GetTabDefaults(tabId);
+            if (!Context.IsWorldReady)
+                return new HashSet<string>(defaults, StringComparer.Ordinal);
+            long farmerId = Game1.player.UniqueMultiplayerID;
+            if (!config.OverviewHiddenCategories.TryGetValue(farmerId, out var perTab) || perTab == null)
+                return new HashSet<string>(defaults, StringComparer.Ordinal);
+            if (!perTab.TryGetValue(tabId, out var hidden) || hidden == null)
+                return new HashSet<string>(defaults, StringComparer.Ordinal);
+            return new HashSet<string>(hidden.Where(category => !string.IsNullOrWhiteSpace(category)), StringComparer.Ordinal);
+        }
+        catch
+        {
+            return new HashSet<string>(GetTabDefaults(tabId), StringComparer.Ordinal);
+        }
+    }
+
+    private void SaveHidden(string tabId, HashSet<string> hidden)
+    {
+        try
+        {
+            if (!Context.IsWorldReady)
+                return;
+            long farmerId = Game1.player.UniqueMultiplayerID;
+            if (!config.OverviewHiddenCategories.TryGetValue(farmerId, out var perTab) || perTab == null)
+                config.OverviewHiddenCategories[farmerId] = perTab = new();
+            perTab[tabId] = hidden.OrderBy(category => category, StringComparer.Ordinal).ToArray();
+            saveConfig();
+        }
+        catch { }
+    }
+
+    private void HideCategory(string tabId, string category)
+    {
+        if (string.IsNullOrWhiteSpace(category))
+            return;
+        HashSet<string> hidden = GetHiddenSet(tabId);
+        if (hidden.Add(category))
+        {
+            SaveHidden(tabId, hidden);
+            grid.ResetScroll();
+            if (selected != null && hidden.Contains(selected.Category))
+                selected = null;
+        }
+    }
+
+    private void RestoreDefaults(string tabId)
+    {
+        SaveHidden(tabId, new HashSet<string>(GetTabDefaults(tabId), StringComparer.Ordinal));
+        grid.ResetScroll();
+        if (selected != null && GetHiddenSet(tabId).Contains(selected.Category))
+            selected = null;
+    }
+
+    private OverviewRow[] GetFilteredRows()
+    {
+        OverviewRow[] rows;
+        try { rows = GetRows(); }
+        catch { rows = cachedRows; }
+        HashSet<string> hidden = GetHiddenSet(tabs.SelectedId);
+        return hidden.Count == 0 ? rows : rows.Where(row => !hidden.Contains(row.Category)).ToArray();
+    }
 
     private static bool IsControlHeld()
     {

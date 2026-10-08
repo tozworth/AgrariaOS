@@ -28,6 +28,17 @@ internal sealed class WindowManager
     private Dictionary<string, WindowPlacement>? layouts;
     // Last entry is the front window, in both drawing and hit testing.
     private readonly List<OsWindow> windows = new();
+    private bool suppressOpenSave;
+    private static readonly HashSet<string> PersistentWindowIds = new(StringComparer.Ordinal)
+    {
+        OverviewWindow.WindowId,
+        MailWindow.WindowId,
+        InventoryWindow.WindowId,
+        LivestockWindow.WindowId,
+        MiningLedgerWindow.WindowId,
+        NotificationsWindow.WindowId,
+        ChatWindow.WindowId,
+    };
     private readonly List<OsWindow> drawnWindows = new();
     private readonly ContextMenu contextMenu = new();
     private Point drawnViewport;
@@ -65,7 +76,7 @@ internal sealed class WindowManager
         this.getMovement = getMovement;
     }
 
-    internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(lookupAnything, getMovement, FocusWorld));
+    internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(config, saveConfig, lookupAnything, getMovement, FocusWorld));
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
     internal void OpenInventory() => Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything));
     internal void OpenLivestock() => Open(LivestockWindow.WindowId, () => new LivestockWindow());
@@ -114,9 +125,74 @@ internal sealed class WindowManager
         windows.Remove(window);
         windows.Add(window);
         focusedWindow = window;
+        RememberOpenWindows();
     }
 
     internal bool IsMinimized(string id) => windows.Any(window => window.Id == id && window.IsMinimized);
+
+    internal void RestoreSavedWindows(NotificationHistory notifications, ChatSession chat, MiningLedger ledger)
+    {
+        if (!Context.IsWorldReady)
+            return;
+        long farmerId;
+        try { farmerId = Game1.player.UniqueMultiplayerID; }
+        catch { return; }
+        if (!config.OpenWindows.TryGetValue(farmerId, out List<WindowOpenState>? saved) || saved == null || saved.Count == 0)
+            return;
+        suppressOpenSave = true;
+        try
+        {
+            foreach (WindowOpenState state in saved.ToArray())
+            {
+                if (state == null || string.IsNullOrWhiteSpace(state.Id) || !PersistentWindowIds.Contains(state.Id))
+                    continue;
+                try
+                {
+                    switch (state.Id)
+                    {
+                        case OverviewWindow.WindowId: OpenOverview(); break;
+                        case MailWindow.WindowId: OpenMail(); break;
+                        case InventoryWindow.WindowId: OpenInventory(); break;
+                        case LivestockWindow.WindowId: OpenLivestock(); break;
+                        case MiningLedgerWindow.WindowId: OpenMiningLedger(ledger); break;
+                        case NotificationsWindow.WindowId: OpenNotifications(notifications); break;
+                        case ChatWindow.WindowId: OpenChat(chat); break;
+                        default: continue;
+                    }
+                    if (state.IsMinimized && windows.FirstOrDefault(window => window.Id == state.Id) is { } opened)
+                        opened.IsMinimized = true;
+                }
+                catch { }
+            }
+            FocusWorld();
+        }
+        finally
+        {
+            suppressOpenSave = false;
+        }
+        RememberOpenWindows();
+    }
+
+    private void RememberOpenWindows()
+    {
+        if (suppressOpenSave || !Context.IsWorldReady)
+            return;
+        try
+        {
+            long farmerId = Game1.player.UniqueMultiplayerID;
+            List<WindowOpenState> current = windows
+                .Where(window => window.IsValid && PersistentWindowIds.Contains(window.Id))
+                .Select(window => new WindowOpenState { Id = window.Id, IsMinimized = window.IsMinimized })
+                .ToList();
+            if (config.OpenWindows.TryGetValue(farmerId, out List<WindowOpenState>? saved) && saved != null
+                && saved.Count == current.Count && saved.Zip(current).All(pair =>
+                    pair.First.Id == pair.Second.Id && pair.First.IsMinimized == pair.Second.IsMinimized))
+                return;
+            config.OpenWindows[farmerId] = current;
+            saveConfig();
+        }
+        catch { }
+    }
 
     internal void OpenLookup(object subject)
     {
@@ -145,6 +221,8 @@ internal sealed class WindowManager
     }
 
     internal bool IsContextMenuOpen => contextMenu.IsOpen;
+
+    internal bool IsOverWindow(Point cursor) => GetWindowAt(cursor) != null;
 
     // Focus, not visibility, owns the pause. Background windows can stay open while playing.
     internal bool HasDesktopFocus => isVisible() && !Game1.IsChatting
@@ -254,6 +332,7 @@ internal sealed class WindowManager
             else
                 window.ReceiveContentClick(cursor, leftClick: false);
         }
+        RememberOpenWindows();
         // Suppress the whole press (including held repeats) before native HUD/world dispatch.
         return true;
     }
@@ -300,6 +379,7 @@ internal sealed class WindowManager
     {
         foreach (OsWindow window in windows.ToArray())
             window.Update();
+        bool removedInvalid = false;
         foreach (OsWindow window in windows.Where(window => !window.IsValid).ToArray())
         {
             CancelPendingTransfer();
@@ -309,7 +389,10 @@ internal sealed class WindowManager
             window.Close();
             if (ReferenceEquals(focusedWindow, window))
                 focusedWindow = windows.LastOrDefault(window => !window.IsMinimized);
+            removedInvalid = true;
         }
+        if (removedInvalid)
+            RememberOpenWindows();
         contextMenu.Update();
         if (!CanReceiveInput)
             contextMenu.Close();
@@ -373,6 +456,33 @@ internal sealed class WindowManager
             ? target : null;
     }
 
+    private Item? GetMergeTargetItem(Point cursor)
+    {
+        if (itemDragSource == null || !itemDragSource.IsValid || HasPendingTransfer
+            || !Context.IsPlayerFree || draggedItems.Length == 0)
+            return null;
+        if (GetWindowAt(cursor) is not InventoryWindow hovered || !ReferenceEquals(hovered, itemDragSource))
+            return null;
+        Item? target = hovered.GetRowAt(cursor);
+        if (target == null || draggedItems.Any(dragged => ReferenceEquals(dragged, target)))
+            return null;
+        // Ignore stale rows whose stack was removed since the last render.
+        var liveItems = (itemDragSource.Chest?.GetItemsForPlayer() ?? Game1.player.Items)
+            .Where(item => item != null).ToArray();
+        if (!liveItems.Any(current => ReferenceEquals(current, target)))
+            return null;
+        foreach (Item dragged in draggedItems)
+        {
+            if (ReferenceEquals(dragged, target) || dragged.Stack <= 0)
+                continue;
+            if (!liveItems.Any(current => ReferenceEquals(current, dragged)))
+                continue;
+            if (target.canStackWith(dragged) && target.Stack < target.maximumStackSize())
+                return target;
+        }
+        return null;
+    }
+
     private void FinishItemDrag(Point cursor)
     {
         if (itemDragSource == null)
@@ -382,6 +492,8 @@ internal sealed class WindowManager
         {
             if (GetInventoryDropTarget(cursor) is { } target)
                 TransferItems(itemDragSource, target, draggedItems);
+            else if (GetMergeTargetItem(cursor) is { } mergeTarget)
+                MergeStacks(itemDragSource, mergeTarget, draggedItems);
         }
         else if (collapseSelectionOnRelease && pressedItem != null)
             itemDragSource.CollapseSelection(pressedItem);
@@ -494,6 +606,129 @@ internal sealed class WindowManager
         }
     }
 
+    private void MergeStacks(InventoryWindow source, Item target, Item[] requested)
+    {
+        Farmer farmer = Game1.player;
+        if (source.Chest == null)
+        {
+            if (!source.IsValid || !Context.IsPlayerFree)
+                return;
+            var items = farmer.Items;
+            if (InventoryTransferBatch.IndexOf(items, target) < 0)
+            {
+                source.TransferStatus = "That stack is no longer available.";
+                return;
+            }
+            try
+            {
+                var result = InventoryStackActions.Merge(items, target, requested, farmer.removeItemFromInventory);
+                if (result.MovedUnits <= 0)
+                {
+                    source.TransferStatus = target.Stack >= target.maximumStackSize()
+                        ? "That stack is full." : "Those stacks cannot be combined.";
+                    return;
+                }
+                bool remaining = requested.Any(item => !ReferenceEquals(item, target)
+                    && InventoryTransferBatch.IndexOf(items, item) >= 0);
+                source.TransferStatus = result.FullyMerged > 0
+                    ? $"Merged {result.FullyMerged} stack{(result.FullyMerged == 1 ? "" : "s")}."
+                        + (remaining ? " Target stack is full." : "")
+                    : $"Merged {result.MovedUnits} items.";
+                source.CollapseSelection(target);
+                Game1.playSound("Ship");
+            }
+            catch (Exception ex)
+            {
+                source.TransferStatus = "Merge failed.";
+                onTransferFailed(ex);
+            }
+            return;
+        }
+
+        Chest chest = source.Chest;
+        var mutex = chest.GetMutex();
+        if (mutex.IsLocked())
+        {
+            source.TransferStatus = "Chest busy. Try again.";
+            return;
+        }
+        GameLocation location = Game1.currentLocation;
+        uint day = Game1.stats.DaysPlayed;
+        Point viewport = drawnViewport;
+        int version = ++transferVersion;
+        pendingTransfer = (version, source, source);
+        void CompletePending()
+        {
+            if (pendingTransfer?.Version == version)
+                pendingTransfer = null;
+        }
+        source.TransferStatus = "Merging...";
+        bool IsValid() => version == transferVersion && CanReceiveInput && Context.IsPlayerFree
+            && Game1.player == farmer && Game1.currentLocation == location && Game1.stats.DaysPlayed == day
+            && viewport == drawnViewport && source.IsValid && !source.IsMinimized && windows.Contains(source)
+            && ReferenceEquals(source.Chest, chest)
+            && Utility.tileWithinRadiusOfPlayer((int)chest.TileLocation.X, (int)chest.TileLocation.Y, 1, farmer);
+        try
+        {
+            mutex.RequestLock(() =>
+            {
+                try
+                {
+                    if (!IsValid())
+                    {
+                        if (version == transferVersion)
+                            source.TransferStatus = "Transfer canceled.";
+                        return;
+                    }
+                    var chestItems = chest.GetItemsForPlayer(farmer.UniqueMultiplayerID);
+                    if (InventoryTransferBatch.IndexOf(chestItems, target) < 0)
+                    {
+                        source.TransferStatus = "That stack is no longer available.";
+                        return;
+                    }
+                    void Remove(Item item) => chestItems[InventoryTransferBatch.IndexOf(chestItems, item)] = null!;
+                    var result = InventoryStackActions.Merge(chestItems, target, requested, Remove);
+                    chest.clearNulls();
+                    if (result.MovedUnits <= 0)
+                    {
+                        source.TransferStatus = target.Stack >= target.maximumStackSize()
+                            ? "That stack is full." : "Those stacks cannot be combined.";
+                        return;
+                    }
+                    bool remaining = requested.Any(item => !ReferenceEquals(item, target)
+                        && InventoryTransferBatch.IndexOf(chestItems, item) >= 0);
+                    source.TransferStatus = result.FullyMerged > 0
+                        ? $"Merged {result.FullyMerged} stack{(result.FullyMerged == 1 ? "" : "s")}."
+                            + (remaining ? " Target stack is full." : "")
+                        : $"Merged {result.MovedUnits} items.";
+                    source.CollapseSelection(target);
+                    Game1.playSound("Ship");
+                }
+                catch (Exception ex)
+                {
+                    source.TransferStatus = "Merge failed.";
+                    onTransferFailed(ex);
+                }
+                finally
+                {
+                    mutex.ReleaseLock();
+                    CompletePending();
+                }
+            }, () =>
+            {
+                CompletePending();
+                if (version == transferVersion)
+                    source.TransferStatus = "Chest busy. Try again.";
+            });
+        }
+        catch (Exception ex)
+        {
+            CompletePending();
+            source.TransferStatus = "Merge failed.";
+            onTransferFailed(ex);
+        }
+    }
+
     private void RememberPlacement(OsWindow window)
     {
         WindowPlacement? placement = window.GetPlacement();
@@ -552,8 +787,12 @@ internal sealed class WindowManager
             if (itemDragActive && itemDragSource != null)
             {
                 InventoryWindow? dropTarget = GetInventoryDropTarget(cursor);
+                Item? mergeTarget = dropTarget == null ? GetMergeTargetItem(cursor) : null;
+                Rectangle? mergeRow = mergeTarget != null ? itemDragSource.GetRowBoundsAt(cursor) : null;
                 dropTarget?.DrawDropTarget(batch, config);
-                itemDragSource.DrawItemDrag(batch, cursor, draggedItems, dropTarget != null, config);
+                if (mergeRow.HasValue)
+                    itemDragSource.DrawMergeTarget(batch, mergeRow.Value, config);
+                itemDragSource.DrawItemDrag(batch, cursor, draggedItems, dropTarget != null || mergeTarget != null, config);
             }
             contextMenu.Draw(batch, config, cursor);
         }

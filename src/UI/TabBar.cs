@@ -44,8 +44,8 @@ internal sealed class TabBar
             if (label.Length > 0 && size.Y + 1 <= height)
                 UiText.Draw(batch, label, new Vector2(x + 6, bounds.Y + (height - size.Y) / 2),
                     selected ? UiStyle.Primary : UiStyle.Muted, config);
-            if (selected && height > 0)
-                batch.Draw(Game1.staminaRect, new Rectangle(x, bounds.Y + height - 1, width, 1), UiStyle.Primary * config.Opacity);
+            if (height > 0)
+                batch.Draw(Game1.staminaRect, new Rectangle(x, bounds.Y + height - 1, width, 1), (selected ? UiStyle.Primary : UiStyle.Border) * config.Opacity);
             x += width;
         }
         if (height > 0 && x < bounds.Right)
@@ -55,14 +55,21 @@ internal sealed class TabBar
 
     internal bool ReceiveClick(Point cursor)
     {
+        string? id = GetTabAt(cursor);
+        if (id == null)
+            return false;
+        SelectedId = id;
+        return true;
+    }
+
+    internal string? GetTabAt(Point cursor)
+    {
         for (int i = 0; i < hitBoxes.Length; i++)
         {
-            if (!hitBoxes[i].Contains(cursor))
-                continue;
-            SelectedId = tabs[i].Id;
-            return true;
+            if (!hitBoxes[i].IsEmpty && hitBoxes[i].Contains(cursor))
+                return tabs[i].Id;
         }
-        return false;
+        return null;
     }
 
     internal void Select(string id)

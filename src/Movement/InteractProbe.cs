@@ -140,7 +140,7 @@ internal static class InteractProbe
                 clickLoc.checkAction(new xTile.Dimensions.Location(want.X, want.Y), Game1.viewport, who);
             }
             var move = new ApproachTarget(new Rectangle(want.X, want.Y, 1, 1), Valid);
-            if (!move.ApproachTiles().Any(approach => approach == farmer.TilePoint || CanWalk(location, farmer, approach)))
+            if (!move.InteractTiles().Any(approach => approach == farmer.TilePoint || CanWalk(location, farmer, approach)))
             {
                 // Walled in (or unwalkable): fall through to vanilla plus Lookup info.
                 if (!CanWalk(location, farmer, want))
@@ -358,7 +358,7 @@ internal static class InteractProbe
     {
         // Entity tiles block pathfinding like NPC hitboxes do; approach the neighbors.
         var move = new ApproachTarget(new Rectangle(entityTile.X, entityTile.Y, 1, 1), valid);
-        if (!move.ApproachTiles().Any(approach => approach == farmer.TilePoint || CanWalk(location, farmer, approach)))
+        if (!move.InteractTiles().Any(approach => approach == farmer.TilePoint || CanWalk(location, farmer, approach)))
             return new InteractRequest(null, tile, valid, perform);
         return new InteractRequest(move, tile, valid, perform);
     }

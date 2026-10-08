@@ -10,7 +10,7 @@ internal sealed class ToolbarRenderer
 {
     private const int SlotSize = 40;
     private const float ItemScale = 0.5f;
-    private const float CountScale = 1f;
+    private const float CountScale = 2f;
     private const int Padding = 2;
     private static readonly Color Background = new(38, 38, 38);
     private static readonly Color SelectedBackground = new(78, 78, 78);
@@ -113,7 +113,7 @@ internal sealed class ToolbarRenderer
         if (!item.IsRecipe && item.maximumStackSize() > 1 && item.Stack > 1 && item.Stack != int.MaxValue)
         {
             int width = Utility.getWidthOfTinyDigitString(item.Stack, CountScale);
-            Vector2 position = new(slot.Right - Padding - width, slot.Bottom - Padding - 7);
+            Vector2 position = new(slot.Right - Padding - width, slot.Bottom - Padding - 7 * CountScale);
             Utility.drawTinyDigits(item.Stack, batch, position + new Vector2(1, 1), CountScale, 0.89f, Color.Black * opacity);
             Utility.drawTinyDigits(item.Stack, batch, position, CountScale, 0.9f, Color.White * opacity);
         }

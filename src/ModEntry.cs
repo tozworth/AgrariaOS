@@ -52,7 +52,7 @@ public sealed partial class ModEntry : Mod
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
         () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything,
         () => Instance.clickToMove.Value));
-    private readonly PerScreen<bool> overviewAutoOpened = new(() => false);
+    private readonly PerScreen<bool> windowsRestored = new(() => false);
     private LookupAnythingIntegration lookupAnything = null!;
     private readonly HardwareCursor hardwareCursor = new();
     private ModConfig config = null!;
@@ -97,7 +97,11 @@ public sealed partial class ModEntry : Mod
                 helper.Input.SuppressScrollWheel();
         };
         helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch);
-        helper.Events.Display.RenderedWorld += (_, e) => DrawMoveDestination(e.SpriteBatch);
+        helper.Events.Display.RenderedWorld += (_, e) =>
+        {
+            DrawHoverHighlight(e.SpriteBatch);
+            DrawMoveDestination(e.SpriteBatch);
+        };
         helper.Events.Display.RenderingActiveMenu += (_, e) =>
         {
             // The opaque menu background skips the HUD render pass entirely.
@@ -124,13 +128,12 @@ public sealed partial class ModEntry : Mod
             // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
             if (patchInstalled && config.Enabled && Context.IsWorldReady && !Game1.onScreenMenus.Contains(pelicom.Value))
                 Game1.onScreenMenus.Add(pelicom.Value);
-            // Overview opens by default once per screen session, in the background so the
-            // game doesn't start paused. Closing it stays closed until the O key reopens it.
-            if (!overviewAutoOpened.Value && UsePelicom)
+            // Restore the farmer's last open windows once per screen session, in the
+            // background so the game doesn't start paused. Nothing is forced open.
+            if (!windowsRestored.Value && UsePelicom)
             {
-                overviewAutoOpened.Value = true;
-                windowManager.Value.OpenOverview();
-                windowManager.Value.FocusWorld();
+                windowsRestored.Value = true;
+                windowManager.Value.RestoreSavedWindows(notificationHistory.Value, chatHistory.Value, miningLedger);
             }
             RouteDialogue();
             windowManager.Value.Update(helper.Input);
@@ -159,7 +162,7 @@ public sealed partial class ModEntry : Mod
             notificationBubbleRenderer.ResetAllScreens();
             pelicom.ResetAllScreens();
             windowManager.ResetAllScreens();
-            overviewAutoOpened.ResetAllScreens();
+            windowsRestored.ResetAllScreens();
             rightClickAction.ResetAllScreens();
             interactArrival.ResetAllScreens();
             telephoneTarget.ResetAllScreens();

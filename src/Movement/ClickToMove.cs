@@ -357,9 +357,31 @@ internal sealed class ClickToMove
     private bool Plan()
     {
         Point start = farmer!.TilePoint;
-        Point[] goals = target == null ? new[] { destination } : target.ApproachTiles().ToArray();
+        // Right-click reach and plain approaches use vanilla Chebyshev reach (diagonals
+        // count); only tool swings stay orthogonal because they need Manhattan adjacency.
+        Point[] goals = target == null ? new[] { destination }
+            : target is ToolTarget ? target.ApproachTiles().ToArray()
+            : target.InteractTiles().ToArray();
         goals = goals.Where(tile => tile == start || CanWalk(tile)).ToArray();
         Stack<Point>? path = TilePathfinder.Find(start, goals, CanWalk);
+        if (path == null && interactTile == null)
+        {
+            // Unreachable tree/wall/ground clicks walk as close as possible instead of
+            // playing cancel: dense canopies and fences can hide every walkable approach
+            // while keyboard-sized movement still squeezes through nearby. Right-click
+            // arrivals skip this so far inspection keeps vanilla facing plus Lookup.
+            Point desired = destination;
+            Stack<Point>? closest = TilePathfinder.FindClosest(start, desired, CanWalk);
+            if (closest != null)
+            {
+                Point fallback = closest.Last();
+                destination = fallback;
+                target = null;
+                warpDestination = null;
+                path = closest;
+                LastDebug = $"Fallback click={desired} dest={fallback} loc={location?.Name} playerTile={start}";
+            }
+        }
         if (path == null)
             return false;
         Point end = path.Last();

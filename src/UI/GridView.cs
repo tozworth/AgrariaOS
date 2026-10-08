@@ -214,6 +214,17 @@ internal sealed class GridView<TRow> where TRow : class
         return index < layoutEndRow ? rows[index] : null;
     }
 
+    internal Rectangle? GetRowBounds(Point cursor)
+    {
+        if (!RowsBounds.Contains(cursor))
+            return null;
+        int index = layoutFirstRow + (cursor.Y - RowsBounds.Y) / rowHeight;
+        if (index >= layoutEndRow)
+            return null;
+        return new Rectangle(RowsBounds.X, RowsBounds.Y + (index - layoutFirstRow) * rowHeight,
+            RowsBounds.Width, rowHeight);
+    }
+
     internal bool ReceiveClick(Point cursor, bool leftClick)
     {
         if (!leftClick)
@@ -321,6 +332,8 @@ internal sealed class GridView<TRow> where TRow : class
         if (delta != 0 && !RowsBounds.IsEmpty)
             FirstRow = (int)Math.Clamp((long)FirstRow - Math.Sign(delta) * Math.Max(1L, Math.Abs((long)delta) / 120), 0, MaxFirstRow);
     }
+
+    internal void ResetScroll() => FirstRow = 0;
 
     private void ClearLayout()
     {

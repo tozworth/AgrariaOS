@@ -6,7 +6,7 @@ Queue up to 9 interactions: each queued tile gets its own bracket color (cyan, y
 
 Click the last visible tile in a map exit to continue across its boundary and warp normally. This includes the farm's bus stop/forest/backwoods exits and farmhouse doorways whose triggers sit one tile beyond the map. Clicking directly on a warp trigger also works. Other edge tiles remain ordinary movement destinations.
 
-Click a solid tile or object, such as a chest, TV, fridge or furnace, to walk to the closest reachable tile beside it and face it. Multi-tile objects use their full ground footprint. The built-in farmhouse fridge accepts either its upper or lower sprite tile. Right-click keeps its existing interactions after you arrive. Fully enclosed targets still have no reachable destination.
+Click a solid tile or object, such as a chest, TV, fridge or furnace, to walk to the closest reachable tile beside it and face it. Multi-tile objects use their full ground footprint. The built-in farmhouse fridge accepts either its upper or lower sprite tile. Right-click keeps its existing interactions after you arrive. Unreachable left-clicks walk as close as possible toward the clicked tile instead of playing `cancel`, so repeated clicks step around dense trees and fences; only a fully stuck position with no closer walk still plays `cancel`.
 
 Clicking a supported tool target walks to the closest reachable cardinally adjacent tile, selects the appropriate tool from the backpack and swings until that target is gone (up to 30 swings), then continues with the queue. Single clicks still do one target fully: click again only for another rock/tree. Water refills stay single-use. Tool animations, stamina costs, upgrade requirements, drops and multiplayer synchronization remain the game's responsibility.
 
@@ -22,7 +22,7 @@ The appropriate tool must already be in the backpack. Chests, machines and tappe
 
 ## Implementation
 
-`Movement/TilePathfinder.cs` implements four-way A* with integer coordinates, a 20,000-node budget and cached collision results per search. It avoids vanilla `PathNode` coordinate and path-cost limits. `Movement/ClickToMove.cs` supplies the resulting stack to the desktop game's `PathFindController`; its ordinary `Farmer.MovePosition` handles collision, speed and player warps. NPC-only controller warp handling is deliberately disabled. The search uses `GameLocation.isCollidingPosition` with `pathfinding` and `skipCollisionEffects`, plus live NPC hitboxes. A stalled route can replan three times, then stops.
+`Movement/TilePathfinder.cs` implements four-way A* with integer coordinates, a 20,000-node budget and cached collision results per search. It avoids vanilla `PathNode` coordinate and path-cost limits. `TilePathfinder.FindClosest` runs the same search toward an unreachable click while tracking the visited walkable tile with the smallest Manhattan distance, returning the path there so dense canopies, fences and walls step closer instead of playing `cancel`. `Movement/ClickToMove.cs` supplies the resulting stack to the desktop game's `PathFindController`; its ordinary `Farmer.MovePosition` handles collision, speed and player warps. NPC-only controller warp handling is deliberately disabled. The search uses `GameLocation.isCollidingPosition` with `pathfinding` and `skipCollisionEffects`, plus live NPC hitboxes. A stalled route can replan three times, then stops.
 
 `Movement/WarpDestination.cs` resolves exit clicks against the location's live player warps. The search permits only the selected trigger as an off-map endpoint, then vanilla movement activates the warp before checking ordinary tile collisions. NPC-only and location-disabled warps stay excluded. A removed/disabled exit cancels the route.
 
@@ -38,7 +38,7 @@ Built against locally installed Stardew Valley 1.6.15 / SMAPI 4.5.2. Headless ch
 
 Exit regression checks read the installed Farm, BusStop and three farmhouse maps. They run vanilla's path follower with simulated farmer movement against the real warp collision API, confirming the extra step reaches east/west/north/south and farmhouse triggers. NPC-only/disabled warps and unrelated edge rows are also checked.
 
-Solid-target checks cover single-tile machines, multi-tile furniture, alternative reachable sides, full enclosure, stale entities, ordinary ground, map-tile fallback, both fridge sprite tiles and tool-equipped furniture/fridge clicks.
+Solid-target checks cover single-tile machines, multi-tile furniture, alternative reachable sides, enclosed targets stepping closer, fully stuck positions still playing `cancel`, stale entities, ordinary ground, map-tile fallback, both fridge sprite tiles and tool-equipped furniture/fridge clicks.
 
 Focused in-game checks after installation and the next normal launch:
 
