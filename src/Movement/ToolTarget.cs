@@ -8,6 +8,22 @@ namespace AgrariaOS.Movement;
 /// <summary>A specific live target, never a destructive probe using performToolAction.</summary>
 internal sealed record ToolTarget(Rectangle Tiles, Tool Tool, Func<bool> IsValid) : ApproachTarget(Tiles, IsValid)
 {
+    internal bool CanReach(Farmer farmer)
+    {
+        Point hit = HitTile(farmer.TilePoint);
+        return (hit != farmer.TilePoint || Tool.CanUseOnStandingTile())
+            && Utility.tileWithinRadiusOfPlayer(hit.X, hit.Y, 1, farmer);
+    }
+
+    /// <summary>Mining strokes only select stones, never placed objects or other tools.</summary>
+    internal static ToolTarget? ResolveRock(GameLocation location, Farmer farmer, Point tile)
+    {
+        if (!location.isTileOnMap(tile))
+            return null;
+        ToolTarget? target = Resolve(location, farmer, tile);
+        return target?.Tool is Pickaxe ? target : null;
+    }
+
     internal static ToolTarget? Resolve(GameLocation location, Farmer farmer, Point tile)
     {
         Tool? FindTool(Func<Tool, bool> matches) => farmer.CurrentTool is { } held && matches(held)

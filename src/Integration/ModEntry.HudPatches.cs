@@ -116,7 +116,7 @@ public sealed partial class ModEntry
 
         try
         {
-            mod.toolbarRenderer.Value.Draw(b, __instance, mod.config, mod.UseTextVitals);
+            mod.toolbarRenderer.Value.Draw(b, __instance, mod.config, mod.UseTextVitals, mod.pelicom.Value.IsVisible);
             return false;
         }
         catch (Exception ex)
@@ -157,7 +157,9 @@ public sealed partial class ModEntry
 
         try
         {
-            mod.statusReadoutRenderer.Value.Draw(b, __instance, mod.config, mod.pelicom.Value.IsVisible ? Pelicom.StripWidth + 8 : 0);
+            Rectangle workArea = mod.pelicom.Value.IsVisible ? Pelicom.GetWorkArea(mod.config)
+                : new Rectangle(0, 0, Game1.uiViewport.Width - 8, Game1.uiViewport.Height - 8);
+            mod.statusReadoutRenderer.Value.Draw(b, __instance, mod.config, workArea);
             return false;
         }
         catch (Exception ex)

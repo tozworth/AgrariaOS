@@ -5,7 +5,8 @@ using StardewValley;
 
 namespace AgrariaOS.UI;
 
-internal sealed record ContextMenuItem(string Text, Action? OnClick = null, bool? IsChecked = null, bool IsEnabled = true);
+internal sealed record ContextMenuItem(string Text, Action? OnClick = null, bool? IsChecked = null, bool IsEnabled = true,
+    ContextMenuItem[]? Children = null);
 
 // The caller supplies a lookup for the clicked target and its lifetime guard. This is
 // shared by world providers, generic interactions and desktop content menus.
@@ -35,6 +36,10 @@ internal sealed class ContextMenu
     private int visibleRows;
     private int firstRow;
     private Func<bool>? isValid;
+    private ModConfig config = null!;
+    private ContextMenu? submenu;
+    private int submenuRow = -1;
+    private int arrowWidth;
 
     internal bool IsOpen => items.Length > 0;
 
@@ -46,6 +51,8 @@ internal sealed class ContextMenu
             return false;
 
         rowHeight = UiText.LineHeight(config.FontScale) + Padding * 2;
+        this.config = config;
+        arrowWidth = entries.Any(item => item.Children is { Length: > 0 }) ? CheckWidth : 0;
         checkWidth = entries.Any(item => item.IsChecked.HasValue) ? CheckWidth : 0;
         this.title = title;
         this.isValid = isValid;
@@ -53,7 +60,7 @@ internal sealed class ContextMenu
         int width = Math.Min(Game1.uiViewport.Width, Math.Max(100,
             (int)MathF.Ceiling(Math.Max(entries.Max(item => Game1.smallFont.MeasureString(item.Text).X),
                 Game1.smallFont.MeasureString(title ?? "").X) * config.FontScale)
-            + checkWidth + Padding * 2 + 3));
+            + checkWidth + arrowWidth + Padding * 2 + 3));
         visibleRows = Math.Min(entries.Length, (Game1.uiViewport.Height - headerHeight - 2) / rowHeight);
         // Long contact lists scroll instead of disappearing or clipping outside the viewport.
         if (width <= 0 || visibleRows <= 0)
@@ -72,6 +79,7 @@ internal sealed class ContextMenu
 
     internal void Close()
     {
+        CloseSubmenu();
         items = Array.Empty<ContextMenuItem>();
         bounds = Rectangle.Empty;
         isValid = null;
@@ -90,17 +98,37 @@ internal sealed class ContextMenu
         Update();
         if (!IsOpen)
             return false;
+        Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+        if (submenu?.Contains(cursor) == true)
+            return submenu.ReceiveScroll(delta);
+        CloseSubmenu();
         firstRow = Math.Clamp(firstRow - Math.Sign(delta), 0, items.Length - visibleRows);
         return true;
     }
 
     internal bool ReceiveClick(Point cursor, bool leftClick)
     {
+        bool consumed = ReceiveClickCore(cursor, leftClick, out Action? action);
+        // Close the entire cascade before invoking actions which may open another popup.
+        action?.Invoke();
+        return consumed;
+    }
+
+    private bool ReceiveClickCore(Point cursor, bool leftClick, out Action? action)
+    {
+        action = null;
         Update();
         if (!IsOpen)
             return false;
 
-        Action? action = null;
+        if (leftClick && submenu?.Contains(cursor) == true)
+        {
+            submenu.ReceiveClickCore(cursor, true, out action);
+            if (!submenu.IsOpen)
+                Close();
+            return true;
+        }
+
         if (leftClick)
         {
             for (int i = 0; i < visibleRows; i++)
@@ -111,6 +139,11 @@ internal sealed class ContextMenu
                     // Disabled rows consume the press and leave the popup open.
                     if (!item.IsEnabled)
                         return true;
+                    if (item.Children is { Length: > 0 })
+                    {
+                        OpenSubmenu(i);
+                        return true;
+                    }
                     action = item.OnClick;
                     break;
                 }
@@ -118,7 +151,6 @@ internal sealed class ContextMenu
         }
         // Dismissal consumes the press too, so it can't activate the UI/world below.
         Close();
-        action?.Invoke();
         return true;
     }
 
@@ -126,6 +158,16 @@ internal sealed class ContextMenu
     {
         if (!IsOpen)
             return;
+
+        if (bounds.Contains(cursor) && submenu?.Contains(cursor) != true)
+        {
+            int hoveredRow = (cursor.Y - bounds.Y - 1 - headerHeight) / rowHeight;
+            if (cursor.Y >= bounds.Y + 1 + headerHeight && hoveredRow >= 0 && hoveredRow < visibleRows
+                && items[firstRow + hoveredRow] is { IsEnabled: true, Children: { Length: > 0 } })
+                OpenSubmenu(hoveredRow);
+            else
+                CloseSubmenu();
+        }
 
         batch.Draw(Game1.staminaRect, bounds, UiStyle.Background * config.Opacity);
         UiStyle.DrawBorder(batch, bounds, config.Opacity);
@@ -141,7 +183,7 @@ internal sealed class ContextMenu
             Rectangle row = RowBounds(i);
             ContextMenuItem item = items[firstRow + i];
             Color color = item.IsEnabled ? UiStyle.Primary : UiStyle.Muted;
-            if (item.IsEnabled && row.Contains(cursor))
+            if (item.IsEnabled && (row.Contains(cursor) || i == submenuRow))
                 batch.Draw(Game1.staminaRect, row, UiStyle.Border * config.Opacity);
 
             if (item.IsChecked.HasValue)
@@ -152,10 +194,13 @@ internal sealed class ContextMenu
                     batch.Draw(Game1.staminaRect, new Rectangle(check.X + 3, check.Y + 3, 4, 4), color * config.Opacity);
             }
 
-            string text = UiText.Fit(item.Text, row.Width - checkWidth - Padding * 2 - 1, config.FontScale);
+            string text = UiText.Fit(item.Text, row.Width - checkWidth - arrowWidth - Padding * 2 - 1, config.FontScale);
             Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
             UiText.Draw(batch, text, new Vector2(row.X + Padding + checkWidth, row.Y + (row.Height - size.Y) / 2),
                 color, config);
+            if (item.Children is { Length: > 0 })
+                UiText.Draw(batch, ">", new Vector2(row.Right - Padding - arrowWidth,
+                    row.Y + (row.Height - size.Y) / 2), color, config);
         }
         // A narrow scroll position marker leaves the full row available for its action.
         if (visibleRows < items.Length)
@@ -167,6 +212,36 @@ internal sealed class ContextMenu
             batch.Draw(Game1.staminaRect, new Rectangle(bounds.Right - 3, thumbY, 2, thumbHeight),
                 UiStyle.Muted * config.Opacity);
         }
+        submenu?.Draw(batch, config, cursor);
+    }
+
+    private bool Contains(Point cursor) => bounds.Contains(cursor) || submenu?.Contains(cursor) == true;
+
+    private void CloseSubmenu()
+    {
+        submenu?.Close();
+        submenu = null;
+        submenuRow = -1;
+    }
+
+    private void OpenSubmenu(int rowIndex)
+    {
+        if (submenuRow == rowIndex)
+            return;
+        CloseSubmenu();
+        ContextMenuItem[]? children = items[firstRow + rowIndex].Children;
+        if (children is not { Length: > 0 })
+            return;
+        Rectangle row = RowBounds(rowIndex);
+        var child = new ContextMenu();
+        if (!child.Open(new Point(bounds.Right, row.Y), children, config))
+            return;
+        // Flip to the left at the viewport edge; keep parent and child adjoining.
+        int x = bounds.Right + child.bounds.Width <= Game1.uiViewport.Width
+            ? bounds.Right : Math.Max(0, bounds.Left - child.bounds.Width);
+        child.bounds = new Rectangle(x, child.bounds.Y, child.bounds.Width, child.bounds.Height);
+        submenu = child;
+        submenuRow = rowIndex;
     }
 
     private Rectangle RowBounds(int index) => new(bounds.X + 1, bounds.Y + 1 + headerHeight + index * rowHeight,

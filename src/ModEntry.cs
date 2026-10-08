@@ -23,6 +23,8 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<bool> osHudActive = new(() => true);
     private readonly PerScreen<ClickToMove> clickToMove = new(() => new ClickToMove());
     private readonly PerScreen<bool> clickToMoveFailed = new(() => false);
+    private readonly PerScreen<MachineCollectDrag> machineCollectDrag = new(() => new MachineCollectDrag());
+    private readonly PerScreen<MachineCollectDrag> rockMiningDrag = new(() => new MachineCollectDrag());
     private readonly PerScreen<StatusReadoutRenderer> statusReadoutRenderer = new(() => new StatusReadoutRenderer());
     private readonly PerScreen<ToolbarRenderer> toolbarRenderer = new(() => new ToolbarRenderer());
     private readonly PerScreen<NotificationHistory> notificationHistory = new(() => new NotificationHistory());
@@ -43,11 +45,11 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.OpenChat(Instance.chatHistory.Value),
         () => Instance.windowManager.Value.IsMinimized(ChatWindow.WindowId),
         (cursor, items) => Instance.windowManager.Value.ShowContextMenu(cursor, items),
-        () => Instance.windowManager.Value.GetMinimizedWindowItems(),
         () => Instance.windowManager.Value.OpenMiningLedger(Instance.miningLedger),
         () => Instance.windowManager.Value.IsMinimized(MiningLedgerWindow.WindowId),
         () => Instance.windowManager.Value.OpenOverview(),
-        () => Instance.windowManager.Value.IsMinimized(OverviewWindow.WindowId)));
+        () => Instance.windowManager.Value.IsMinimized(OverviewWindow.WindowId),
+        () => Instance.Helper.WriteConfig(Instance.config)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
         () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything,
@@ -88,6 +90,8 @@ public sealed partial class ModEntry : Mod
         {
             windowManager.Value.SuppressKeyboardInput(helper.Input);
             UpdateDesktopPause();
+            UpdateMachineCollectDrag();
+            UpdateRockMiningDrag();
             UpdateClickToMove(beforeUpdate: true);
         };
         helper.Events.Input.MouseWheelScrolled += (_, e) =>
@@ -145,6 +149,8 @@ public sealed partial class ModEntry : Mod
                 screen.Value.Cancel();
             clickToMove.ResetAllScreens();
             clickToMoveFailed.ResetAllScreens();
+            machineCollectDrag.ResetAllScreens();
+            rockMiningDrag.ResetAllScreens();
             hardwareCursor.Reset();
             foreach (var screen in windowManager.GetActiveValues())
             {
@@ -172,6 +178,13 @@ public sealed partial class ModEntry : Mod
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
+        if (e.Button == SButton.MouseRight && Context.IsWorldReady)
+            Monitor.Log($"RightClick loc={Game1.currentLocation?.Name} pixel={e.Cursor.AbsolutePixels} move={CanClickToMove} append={CanAppendToQueue} suppressed={e.IsSuppressed()} tool={Game1.player.CurrentTool?.QualifiedItemId}", LogLevel.Trace);
+        if (e.Button is not (SButton.LeftControl or SButton.RightControl or SButton.LeftAlt or SButton.RightAlt))
+        {
+            machineCollectDrag.Value.Reset();
+            rockMiningDrag.Value.Reset();
+        }
         // New destinations, UI clicks and ordinary controls all release our route first.
         // This only clears a controller we own, never one installed by an event/other mod.
         // Mouse clicks manage the queue themselves (replace vs append); clearing here
@@ -217,8 +230,7 @@ public sealed partial class ModEntry : Mod
             return;
         }
 
-        if (e.Button == SButton.MouseLeft && !e.IsSuppressed() && (CanClickToMove || CanAppendToQueue)
-            && !Helper.Input.IsDown(SButton.LeftShift) && !Helper.Input.IsDown(SButton.RightShift))
+        if (e.Button == SButton.MouseLeft && !e.IsSuppressed() && (CanClickToMove || CanAppendToQueue))
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             // Keep clock/journal/zoom, toolbar and other mods' HUD menus in vanilla's hands.
@@ -229,8 +241,21 @@ public sealed partial class ModEntry : Mod
                 {
                     Vector2 pixel = e.Cursor.AbsolutePixels;
                     Point tile = new Point((int)MathF.Floor(pixel.X / 64), (int)MathF.Floor(pixel.Y / 64));
+                    bool furnitureClick = IsFurnitureLeftClick(Game1.currentLocation, Game1.player, tile);
+                    if (!furnitureClick && (Helper.Input.IsDown(SButton.LeftShift) || Helper.Input.IsDown(SButton.RightShift)))
+                        return;
                     bool busyBefore = clickToMove.Value.IsBusy;
                     bool moveAllowed = CanClickToMove;
+                    if ((furnitureClick || moveAllowed) && (furnitureClick
+                            || !Helper.Input.IsDown(SButton.LeftControl) && !Helper.Input.IsDown(SButton.RightControl))
+                        && ShouldUseVanillaLeftClick(Game1.currentLocation, Game1.player, tile))
+                    {
+                        // Release our route before vanilla swings or places/picks up furniture.
+                        // Leave the mouse unsuppressed so native targeting and removal
+                        // rules run exactly as they do for the keyboard tool binding.
+                        clickToMove.Value.Cancel();
+                        return;
+                    }
                     bool queued = TryQueueLeftClick(tile);
                     bool started = false;
                     // Append-only mode (mid-swing) must never Start: that would hijack
@@ -239,7 +264,10 @@ public sealed partial class ModEntry : Mod
                         started = clickToMove.Value.Start(tile);
                     Monitor.Log($"LeftClick loc={Game1.currentLocation?.Name} tile={tile} playerTile={Game1.player.TilePoint} busyBefore={busyBefore} moveAllowed={moveAllowed} queued={queued} started={started} {clickToMove.Value.LastDebug}", LogLevel.Trace);
                     if (queued || started)
+                    {
+                        TryBeginRockMiningDrag(pixel, tile);
                         Helper.Input.Suppress(e.Button);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -249,7 +277,7 @@ public sealed partial class ModEntry : Mod
             }
         }
 
-        if (e.Button == SButton.MouseRight && !e.IsSuppressed() && (CanClickToMove || CanAppendToQueue)
+        if (e.Button == SButton.MouseRight && !e.IsSuppressed() && (CanSelectCollections || CanClickToMove || CanAppendToQueue)
             && !Helper.Input.IsDown(SButton.LeftShift) && !Helper.Input.IsDown(SButton.RightShift))
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
@@ -258,7 +286,9 @@ public sealed partial class ModEntry : Mod
                     && menu.isWithinBounds(cursor.X, cursor.Y)))
             {
                 Vector2 pixel = e.Cursor.AbsolutePixels;
-                if (TryStartRightClickInteract(new Point((int)MathF.Floor(pixel.X / 64), (int)MathF.Floor(pixel.Y / 64))))
+                Point tile = new((int)MathF.Floor(pixel.X / 64), (int)MathF.Floor(pixel.Y / 64));
+                if ((CanSelectCollections && TryBeginMachineCollectDrag(pixel, tile))
+                    || ((CanClickToMove || CanAppendToQueue) && TryStartRightClickInteract(tile)))
                     Helper.Input.Suppress(e.Button);
                 // Unactionable far tiles keep vanilla's facing-tile action plus Lookup info.
             }

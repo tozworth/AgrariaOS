@@ -51,24 +51,54 @@ internal sealed class ClickToMove
     private Func<Point>? interactTile;
     private Func<bool>? interactValid;
     private Action<Farmer>? interactPerform;
+    private InteractRequest? interactRequest;
     private Point? arrivedInteractTile;
     private Action<Farmer>? arrivedInteractPerform;
+    private object? arrivedInteractIdentity;
     private ToolTarget? repeatTool;
     private int repeatSwings;
     private readonly Queue<QueuedStep> pending = new();
 
-    internal Point? Destination => controller != null ? ActiveDisplayTile() ?? destination : null;
+    internal Point? Destination => controller != null || arrived ? ActiveDisplayTile() ?? destination : null;
 
-    internal bool IsBusy => controller != null || repeatTool != null || toolFarmer != null
+    internal bool IsBusy => controller != null || arrived || repeatTool != null || toolFarmer != null
         || arrivedInteractTile != null || pending.Count > 0;
 
     internal int TotalCount => pending.Count
-        + (controller != null || repeatTool != null || toolFarmer != null || arrivedInteractTile != null ? 1 : 0);
+        + (controller != null || arrived || repeatTool != null || toolFarmer != null || arrivedInteractTile != null ? 1 : 0);
+
+    internal bool HasQueuedTool(ToolTarget tool) => target is ToolTarget active && SameTool(active, tool)
+        || repeatTool != null && SameTool(repeatTool, tool)
+        || pending.Any(step => step.Target is ToolTarget queued && SameTool(queued, tool));
+
+    private static bool SameTool(ToolTarget a, ToolTarget b) => a.Tiles == b.Tiles && a.IsValid() && b.IsValid();
+
+    internal bool EnqueueRock(Point tile, bool startImmediately)
+    {
+        Farmer who = Game1.player;
+        GameLocation here = Game1.currentLocation;
+        if (!here.isTileOnMap(tile) || who.controller != null && who.controller != controller)
+            return false;
+        ToolTarget? rock = ToolTarget.ResolveRock(here, who, tile);
+        if (rock == null)
+            return false;
+        return HasQueuedTool(rock) || EnqueueStep(
+            new QueuedStep(tile, rock, null, null, here, Game1.stats.DaysPlayed), startImmediately);
+    }
+
+    internal bool HasQueuedInteraction(Point tile) => arrivedInteractTile == tile
+        || interactTile?.Invoke() == tile || pending.Any(step => step.Request?.Tile() == tile);
+
+    internal bool HasQueuedRequest(InteractRequest request) => request.Identity == null
+        ? HasQueuedInteraction(request.Tile())
+        : ReferenceEquals(interactRequest?.Identity, request.Identity)
+            || ReferenceEquals(arrivedInteractIdentity, request.Identity)
+            || pending.Any(step => ReferenceEquals(step.Request?.Identity, request.Identity));
 
     internal IReadOnlyList<(Point Tile, Color Color)> GetQueueDisplay()
     {
         List<(Point Tile, Color Color)> list = new();
-        Point? active = controller != null ? ActiveDisplayTile()
+        Point? active = controller != null || arrived ? ActiveDisplayTile()
             : repeatTool != null ? RepeatDisplayTile()
             : arrivedInteractTile;
         if (active is { } head)
@@ -185,6 +215,7 @@ internal sealed class ClickToMove
         interactTile = request.Tile;
         interactValid = request.Valid;
         interactPerform = request.Perform;
+        interactRequest = request;
         if (!Plan())
         {
             Cancel();
@@ -275,7 +306,7 @@ internal sealed class ClickToMove
         return EnqueueStep(new QueuedStep(tile, resolved, null, null, here, Game1.stats.DaysPlayed));
     }
 
-    internal bool EnqueueInteract(InteractRequest request, Point clicked)
+    internal bool EnqueueInteract(InteractRequest request, Point clicked, bool startImmediately = true)
     {
         Farmer who = Game1.player;
         GameLocation here = Game1.currentLocation;
@@ -283,13 +314,13 @@ internal sealed class ClickToMove
             return false;
         if (!here.isTileOnMap(clicked))
             return false;
-        return EnqueueStep(new QueuedStep(clicked, request.Move, request, null, here, Game1.stats.DaysPlayed));
+        return EnqueueStep(new QueuedStep(clicked, request.Move, request, null, here, Game1.stats.DaysPlayed), startImmediately);
     }
 
-    private bool EnqueueStep(QueuedStep step)
+    private bool EnqueueStep(QueuedStep step, bool startImmediately = true)
     {
         // Idle with no active leg: start immediately so single clicks keep the old feel.
-        if (!IsBusy)
+        if (!IsBusy && startImmediately)
         {
             LastDebug = $"Enqueue idle->Start click={step.Clicked}";
             if (step.Request != null)
@@ -318,6 +349,7 @@ internal sealed class ClickToMove
             perform = action;
             arrivedInteractTile = null;
             arrivedInteractPerform = null;
+            arrivedInteractIdentity = null;
             return true;
         }
         tile = default;
@@ -357,10 +389,23 @@ internal sealed class ClickToMove
     private bool Plan()
     {
         Point start = farmer!.TilePoint;
-        // Right-click reach and plain approaches use vanilla Chebyshev reach (diagonals
-        // count); only tool swings stay orthogonal because they need Manhattan adjacency.
+        // Native mouse tool targeting accepts diagonals too. Already-reachable legs
+        // arrive in place: a path controller would first center the farmer on a tile.
+        Point? hit = interactTile?.Invoke() ?? target?.HitTile(start);
+        bool inReach = target is ToolTarget tool && interactTile == null
+            ? tool.CanReach(farmer)
+            : hit is { } reachable && Utility.tileWithinRadiusOfPlayer(reachable.X, reachable.Y, 1, farmer);
+        if (inReach)
+        {
+            if (controller != null && farmer.controller == controller)
+                farmer.controller = null;
+            controller = null;
+            farmer.Halt();
+            arrived = true;
+            stalledMilliseconds = 0;
+            return true;
+        }
         Point[] goals = target == null ? new[] { destination }
-            : target is ToolTarget ? target.ApproachTiles().ToArray()
             : target.InteractTiles().ToArray();
         goals = goals.Where(tile => tile == start || CanWalk(tile)).ToArray();
         Stack<Point>? path = TilePathfinder.Find(start, goals, CanWalk);
@@ -431,6 +476,7 @@ internal sealed class ClickToMove
                 interactTile = step.Request.Tile;
                 interactValid = step.Request.Valid;
                 interactPerform = step.Request.Perform;
+                interactRequest = step.Request;
                 replans = 0;
                 if (Plan())
                     return true;
@@ -483,7 +529,7 @@ internal sealed class ClickToMove
             Cancel();
             return;
         }
-        if (controller == null)
+        if (controller == null && !arrived)
             return;
         if (farmer != Game1.player || location != Game1.currentLocation || day != Game1.stats.DaysPlayed
             || farmer.controller != null && farmer.controller != controller)
@@ -520,7 +566,7 @@ internal sealed class ClickToMove
     internal void AfterUpdate(bool canMove)
     {
         ReleaseTool();
-        if (controller == null)
+        if (controller == null && !arrived)
         {
             if (repeatTool != null)
             {
@@ -575,7 +621,7 @@ internal sealed class ClickToMove
             Farmer who = farmer!;
             // Right-click arrivals queue the vanilla right-click action for ModEntry to
             // perform with its routing flag held. Moving targets that wandered off get
-            // one chase replan instead of interacting with empty air.
+            // bounded chase replans instead of interacting with empty air.
             if (interactTile != null && interactPerform != null)
             {
                 Func<bool>? valid = interactValid;
@@ -603,6 +649,18 @@ internal sealed class ClickToMove
                         CancelActive();
                         Game1.playSound("cancel");
                     }
+                    else if (target?.LiveTiles != null)
+                    {
+                        // Keep the exact selected animal and pet-only callbacks as it moves.
+                        // Resolving a new generic right-click here could inspect an animal
+                        // or select a different animal sharing the new tile.
+                        destination = want;
+                        if (!Plan())
+                        {
+                            CancelActive();
+                            Game1.playSound("cancel");
+                        }
+                    }
                     else if (InteractProbe.TryResolve(location!, who, want) is { } chase)
                     {
                         target = chase.Move;
@@ -610,6 +668,7 @@ internal sealed class ClickToMove
                         interactTile = chase.Tile;
                         interactValid = chase.Valid;
                         interactPerform = chase.Perform;
+                        interactRequest = chase;
                         if (!Plan())
                         {
                             CancelActive();
@@ -623,9 +682,11 @@ internal sealed class ClickToMove
                     }
                     return;
                 }
+                object? identity = interactRequest?.Identity;
                 CancelActive();
                 arrivedInteractTile = want;
                 arrivedInteractPerform = perform;
+                arrivedInteractIdentity = identity;
                 return;
             }
             ApproachTarget? approached = target;
@@ -651,7 +712,7 @@ internal sealed class ClickToMove
                 Point hit;
                 try { hit = action.HitTile(who.TilePoint); }
                 catch { return; }
-                if (Math.Abs(hit.X - who.TilePoint.X) + Math.Abs(hit.Y - who.TilePoint.Y) != 1)
+                if (!action.CanReach(who))
                     return;
                 // Water refills stay single-use: the tile remains refillable after filling.
                 bool singleUse = action.Tool is WateringCan
@@ -761,7 +822,7 @@ internal sealed class ClickToMove
             location = null;
             return;
         }
-        if (Math.Abs(hit.X - who.TilePoint.X) + Math.Abs(hit.Y - who.TilePoint.Y) != 1)
+        if (!tool.CanReach(who))
         {
             repeatTool = null;
             farmer = null;
@@ -816,6 +877,7 @@ internal sealed class ClickToMove
         interactTile = null;
         interactValid = null;
         interactPerform = null;
+        interactRequest = null;
     }
 
     internal void Cancel()
@@ -826,5 +888,6 @@ internal sealed class ClickToMove
         repeatSwings = 0;
         arrivedInteractTile = null;
         arrivedInteractPerform = null;
+        arrivedInteractIdentity = null;
     }
 }

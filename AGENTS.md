@@ -10,7 +10,7 @@ Source lives in `src/`: `ModEntry.cs` coordinates per-screen state and SMAPI eve
 
 - Target `net6.0`; the installed .NET 10 SDK builds it successfully. Stardew supplies MonoGame and its runtime. No Visual Studio, separate MonoGame SDK, or ImGui needed.
 - `Pathoschild.Stardew.ModBuildConfig` supplies game/SMAPI/Harmony references. Keep dependencies small and don't bundle game assemblies.
-- `.\build.ps1` builds and packages into `dist/`; `.\build.ps1 -Install` also deploys to the game's Mods folder. Use `-GamePath 'path'` if auto-detection fails. Intermediates/tools belong in `.artifacts/`.
+- `.\build.ps1` builds and packages into `dist/`; `.\build.ps1 -Install` also deploys to the game's Mods folder; `.\build.ps1 -Launch` installs then launches SMAPI. Use `-GamePath 'path'` if auto-detection fails. Intermediates/tools belong in `.artifacts/`.
 - Local baseline: Stardew 1.6.15, SMAPI 4.5.2, game folder `C:\Program Files (x86)\Steam\steamapps\common\Stardew Valley`. Check installed versions before assuming APIs match.
 
 ## Inspect the game code

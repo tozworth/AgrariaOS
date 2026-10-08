@@ -205,13 +205,6 @@ internal sealed class WindowManager
         ((LookupWindow)windows.Last()).ShowPage(subject);
     }
 
-    internal ContextMenuItem[] GetMinimizedWindowItems() => windows.Where(window => window.IsValid && window.IsMinimized)
-        .Select(window => new ContextMenuItem($"Restore {window.Title}", () =>
-        {
-            if (window.IsValid)
-                Open(window.Id, () => window);
-        })).ToArray();
-
     internal void CloseAll()
     {
         InvalidateLayout();
@@ -768,9 +761,7 @@ internal sealed class WindowManager
             if (!CanReceiveInput)
                 contextMenu.Close();
             drawnViewport = new Point(Game1.uiViewport.Width, Game1.uiViewport.Height);
-            const int margin = 8;
-            int left = Pelicom.StripWidth + margin;
-            Rectangle workArea = new(left, margin, Math.Max(0, drawnViewport.X - left - margin), Math.Max(0, drawnViewport.Y - margin * 2));
+            Rectangle workArea = Pelicom.GetWorkArea(config);
             float titleTextHeight = windows.Count == 0 ? Game1.smallFont.LineSpacing
                 : windows.Max(window => Math.Max(Game1.smallFont.MeasureString(window.Title).Y,
                     Game1.smallFont.MeasureString(window.TitleSubtext).Y));

@@ -2,6 +2,8 @@ using StardewModdingAPI;
 
 namespace AgrariaOS.Configuration;
 
+public enum PelicomEdge { Left, Right, Top, Bottom }
+
 public sealed class ModConfig
 {
     public bool Enabled { get; set; } = true;
@@ -19,6 +21,7 @@ public sealed class ModConfig
     public bool ShowSecurity { get; set; } = true;
     public bool ShowWeather { get; set; } = true;
     public bool ShowChatTimestamps { get; set; } = true;
+    public Dictionary<long, PelicomEdge> PelicomPositions { get; set; } = new();
     // Farmer IDs survive reloads and split-screen reconnects; screen IDs don't.
     public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
     // Open windows (back-to-front) with minimized flags, per farmer. Chest and lookup windows are transient.
@@ -33,6 +36,10 @@ public sealed class ModConfig
         TextScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 0.5f, 2f) : 1f;
         Opacity = float.IsFinite(Opacity) ? Math.Clamp(Opacity, 0.1f, 1f) : 0.95f;
         WindowLayouts ??= new();
+        PelicomPositions ??= new();
+        foreach (long farmerId in PelicomPositions.Keys.ToArray())
+            if (!Enum.IsDefined(typeof(PelicomEdge), PelicomPositions[farmerId]))
+                PelicomPositions.Remove(farmerId);
         foreach (long farmerId in WindowLayouts.Keys.ToArray())
         {
             Dictionary<string, WindowPlacement>? layouts = WindowLayouts[farmerId];

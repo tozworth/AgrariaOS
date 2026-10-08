@@ -5,41 +5,45 @@ using StardewValley.Locations;
 namespace AgrariaOS.Movement;
 
 /// <summary>A live footprint to approach, without automatically interacting with it.</summary>
-internal record ApproachTarget(Rectangle Tiles, Func<bool> IsValid)
+internal record ApproachTarget(Rectangle Tiles, Func<bool> IsValid, Func<Rectangle>? LiveTiles = null)
 {
     internal IEnumerable<Point> ApproachTiles()
     {
-        for (int x = Tiles.Left; x < Tiles.Right; x++)
+        Rectangle tiles = LiveTiles?.Invoke() ?? Tiles;
+        for (int x = tiles.Left; x < tiles.Right; x++)
         {
-            yield return new Point(x, Tiles.Top - 1);
-            yield return new Point(x, Tiles.Bottom);
+            yield return new Point(x, tiles.Top - 1);
+            yield return new Point(x, tiles.Bottom);
         }
-        for (int y = Tiles.Top; y < Tiles.Bottom; y++)
+        for (int y = tiles.Top; y < tiles.Bottom; y++)
         {
-            yield return new Point(Tiles.Left - 1, y);
-            yield return new Point(Tiles.Right, y);
+            yield return new Point(tiles.Left - 1, y);
+            yield return new Point(tiles.Right, y);
         }
     }
 
     /// <summary>All walkable candidates within vanilla right-click reach (Chebyshev 1,
-    /// including diagonals). Vanilla's tileWithinRadiusOfPlayer allows diagonal
-    /// collection, but <see cref="ApproachTiles"/> is orthogonal-only for tool swings
-    /// which require Manhattan adjacency.</summary>
+    /// including diagonals). Native mouse tool targeting also accepts this reach.</summary>
     internal IEnumerable<Point> InteractTiles()
     {
-        for (int x = Tiles.Left - 1; x <= Tiles.Right; x++)
+        Rectangle tiles = LiveTiles?.Invoke() ?? Tiles;
+        for (int x = tiles.Left - 1; x <= tiles.Right; x++)
         {
-            for (int y = Tiles.Top - 1; y <= Tiles.Bottom; y++)
+            for (int y = tiles.Top - 1; y <= tiles.Bottom; y++)
             {
-                if (x >= Tiles.Left && x < Tiles.Right && y >= Tiles.Top && y < Tiles.Bottom)
+                if (x >= tiles.Left && x < tiles.Right && y >= tiles.Top && y < tiles.Bottom)
                     continue;
                 yield return new Point(x, y);
             }
         }
     }
 
-    internal Point HitTile(Point farmerTile) => new(Math.Clamp(farmerTile.X, Tiles.Left, Tiles.Right - 1),
-        Math.Clamp(farmerTile.Y, Tiles.Top, Tiles.Bottom - 1));
+    internal Point HitTile(Point farmerTile)
+    {
+        Rectangle tiles = LiveTiles?.Invoke() ?? Tiles;
+        return new(Math.Clamp(farmerTile.X, tiles.Left, tiles.Right - 1),
+            Math.Clamp(farmerTile.Y, tiles.Top, tiles.Bottom - 1));
+    }
 
     private static Rectangle TileBounds(Rectangle pixels, Point fallback)
     {

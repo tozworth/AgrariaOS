@@ -1,4 +1,5 @@
 using AgrariaOS.Configuration;
+using AgrariaOS.Desktop;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
@@ -17,13 +18,13 @@ internal sealed class ToolbarRenderer
     private Toolbar? compactToolbar;
     private Rectangle drawnBounds;
 
-    private Rectangle UpdateLayout(Toolbar toolbar)
+    private Rectangle UpdateLayout(Toolbar toolbar, int bottomInset)
     {
         compactToolbar = toolbar;
         int height = SlotSize + Padding * 2;
         int width = toolbar.buttons.Count * SlotSize + Padding * 2;
         int x = (Game1.uiViewport.Width - width) / 2;
-        int y = Game1.uiViewport.Height - height;
+        int y = Math.Max(0, Game1.uiViewport.Height - height - bottomInset);
 
         // Keep the vanilla anchor valid so switching back restores its own layout immediately.
         toolbar.yPositionOnScreen = Game1.uiViewport.Height + 8;
@@ -57,12 +58,12 @@ internal sealed class ToolbarRenderer
         toolbar.gameWindowSizeChanged(viewport, viewport);
     }
 
-    public void Draw(SpriteBatch batch, Toolbar toolbar, ModConfig config, bool showVitals)
+    public void Draw(SpriteBatch batch, Toolbar toolbar, ModConfig config, bool showVitals, bool showPelicom)
     {
         if (Game1.activeClickableMenu != null)
             return;
 
-        Rectangle strip = UpdateLayout(toolbar);
+        Rectangle strip = UpdateLayout(toolbar, showPelicom && Pelicom.GetPosition(config) == PelicomEdge.Bottom ? Pelicom.StripWidth : 0);
         if (Game1.options.pinToolbarToggle)
         {
             // Match vanilla's fade when the player approaches a pinned toolbar.

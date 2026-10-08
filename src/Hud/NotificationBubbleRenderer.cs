@@ -14,11 +14,12 @@ internal sealed class NotificationBubbleRenderer
     {
         const int padding = 8;
         const int iconWidth = 24;
-        int left = Pelicom.StripWidth + padding;
-        int width = Math.Min(460, Game1.uiViewport.Width - left - padding);
+        Rectangle workArea = Pelicom.GetWorkArea(config, padding);
+        int left = workArea.Left;
+        int width = Math.Min(460, workArea.Width);
         int lineHeight = UiText.LineHeight(config.FontScale);
-        int bottom = Game1.uiViewport.Height - 80;
-        int available = bottom - padding - heightUsed;
+        int bottom = Game1.uiViewport.Height - 80 - (Pelicom.GetPosition(config) == PelicomEdge.Bottom ? Pelicom.StripWidth : 0);
+        int available = bottom - workArea.Top - heightUsed;
         if (width <= padding * 2 + iconWidth || available < lineHeight + padding * 2)
             return;
 

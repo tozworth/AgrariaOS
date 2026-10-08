@@ -82,15 +82,16 @@ internal static class UiText
         return lines;
     }
 
-    internal static void Draw(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config, float opacity = 1f)
+    internal static void Draw(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config, float opacity = 1f,
+        float? scale = null)
     {
         position = new Vector2(MathF.Round(position.X), MathF.Round(position.Y));
         // Whole font scales and pixel-aligned positions avoid resampling the bitmap glyphs.
         // The game's HUD batch already uses PointClamp; don't restart or alter its shared batch.
         batch.DrawString(Game1.smallFont, text, position + new Vector2(1, 1), Color.Black * (config.Opacity * opacity * 0.8f), 0,
-            Vector2.Zero, config.FontScale, SpriteEffects.None, 0.9f);
+            Vector2.Zero, scale ?? config.FontScale, SpriteEffects.None, 0.9f);
         batch.DrawString(Game1.smallFont, text, position, color * (config.Opacity * opacity), 0,
-            Vector2.Zero, config.FontScale, SpriteEffects.None, 0.91f);
+            Vector2.Zero, scale ?? config.FontScale, SpriteEffects.None, 0.91f);
     }
 
     internal static void DrawBold(SpriteBatch batch, string text, Vector2 position, Color color, ModConfig config)

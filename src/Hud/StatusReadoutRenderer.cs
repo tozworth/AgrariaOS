@@ -19,7 +19,7 @@ internal sealed class StatusReadoutRenderer : IDisposable
     private string conditionsAndMoney = "";
     private Texture2D? cornerShadow;
 
-    public void Draw(SpriteBatch batch, DayTimeMoneyBox clock, ModConfig config, int leftInset)
+    public void Draw(SpriteBatch batch, DayTimeMoneyBox clock, ModConfig config, Rectangle workArea)
     {
         GameLocation location = Game1.currentLocation;
         string phase = Game1.isDarkOut(location) ? "NIGHT" : Game1.isStartingToGetDarkOut(location) ? "DUSK" : "DAY";
@@ -67,8 +67,8 @@ internal sealed class StatusReadoutRenderer : IDisposable
             width = Math.Max(width, (font.MeasureString(locationText).X + font.MeasureString(securityText).X) * scale);
 
         int lineCount = (config.ShowLocation ? 1 : 0) + 2 + (Game1.player.hasVisibleQuests || Game1.options.zoomButtons ? 1 : 0);
-        float x = MathF.Floor(Math.Clamp(Math.Max(config.X, leftInset), 0, Math.Max(0, Game1.uiViewport.Width - width - 8)));
-        float y = MathF.Floor(Math.Clamp(config.Y, 0, Math.Max(0, Game1.uiViewport.Height - lineCount * lineHeight - 8)));
+        float x = MathF.Floor(Math.Clamp(Math.Max(config.X, workArea.Left), 0, Math.Max(0, workArea.Right - width)));
+        float y = MathF.Floor(Math.Clamp(Math.Max(config.Y, workArea.Top), 0, Math.Max(0, workArea.Bottom - lineCount * lineHeight)));
         DrawCornerShadow(batch, x + width, y + lineCount * lineHeight, config.Opacity);
         if (config.ShowLocation)
         {
