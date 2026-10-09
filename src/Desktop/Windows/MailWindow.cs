@@ -1,4 +1,5 @@
 using AgrariaOS.Configuration;
+using AgrariaOS.Mail;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -8,9 +9,9 @@ using StardewValley;
 namespace AgrariaOS.Desktop.Windows;
 
 // Desktop mail viewer: the list stays on top and the selected letter reads in
-// the pane below. Selection never pops the vanilla letter viewer, so the
-// window works while the game is paused or another menu has focus.
-internal sealed class MailWindow : OsWindow
+// the pane below. Explicitly clicking an unread row processes the delivery;
+// drawing and previewing the default selection never grant rewards.
+internal sealed partial class MailWindow : OsWindow
 {
     internal const string WindowId = "Mail";
     private const int Padding = GridView<MailRow>.Padding;
@@ -21,9 +22,24 @@ internal sealed class MailWindow : OsWindow
         GridColumn<MailRow>.Create("Title", 200, 44, row => row.Title, row => row.Title,
             comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawTitleCell, id: "title"),
         GridColumn<MailRow>.Create("Body", 360, 60, row => row.Preview, row => row.Preview,
-            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "body"));
+            textColor: UiStyle.Muted, comparer: StringComparer.CurrentCultureIgnoreCase, id: "body"),
+        GridColumn<MailRow>.Create("Received", 110, 50, row => row.Record.Date, row => row.Record.DateOrder,
+            textColor: UiStyle.Muted, id: "received"));
 
+    private readonly TreeView tree = new();
+    private Rectangle treeBounds;
+    private Rectangle attachmentsBounds;
+    private readonly List<(Rectangle Bounds, MailAttachment Attachment)> attachmentButtons = new();
     private string? selectedId;
+
+    internal MailWindow()
+    {
+        var all = new TreeNode("all", "All");
+        all.Children.Add(new TreeNode("inbox", "Inbox"));
+        all.Children.Add(new TreeNode("updates", "Updates"));
+        tree.SetRoots(new[] { all });
+        tree.Select("all");
+    }
     private Rectangle listBounds = Rectangle.Empty;
     private Rectangle previewBounds = Rectangle.Empty;
     private Rectangle previewRowsBounds = Rectangle.Empty;
@@ -43,12 +59,14 @@ internal sealed class MailWindow : OsWindow
     {
         get
         {
-            int count = GetRows().Length;
-            return count == 1 ? "1 letter" : $"{count} letters";
+            int count = MailArchive.Active?.Letters.Count ?? 0;
+            int unread = MailArchive.Active?.UnreadCount ?? 0;
+            string total = count == 1 ? "1 letter" : $"{count} letters";
+            return unread > 0 ? $"{total} · {unread} unread" : total;
         }
     }
     internal override int Icon => UiStyle.MailIcon;
-    internal override Point DefaultSize => new(600, 480);
+    internal override Point DefaultSize => new(760, 480);
 
     protected override Point GetMinimumSize(ModConfig config)
     {
@@ -56,7 +74,7 @@ internal sealed class MailWindow : OsWindow
         int lineHeight = UiText.LineHeight(config.FontScale);
         int listMin = Padding * 2 + rowHeight * 3 + 1;
         int previewMin = Padding * 2 + lineHeight + 4 + lineHeight * 3;
-        return new(320, TitleHeight + 2 + listMin + Divider + previewMin);
+        return new(480, TitleHeight + 2 + listMin + Divider + previewMin);
     }
 
     protected override void DrawContent(SpriteBatch batch, Rectangle contentBounds, ModConfig config)
@@ -66,15 +84,24 @@ internal sealed class MailWindow : OsWindow
         if (rows.Length == 0)
             selectedId = null;
         else if (selectedId == null || rows.All(row => row.Id != selectedId))
-            selectedId = grid.Rows.Count > 0 ? grid.Rows[0].Id : rows[0].Id;
+            selectedId = rows[0].Id;
 
         int rowHeight = grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding);
         int lineHeight = UiText.LineHeight(config.FontScale);
         int listMin = Padding * 2 + rowHeight * 3 + 1;
         int previewMin = Padding * 2 + lineHeight + 4 + lineHeight * 2;
-        listBounds = previewBounds = previewRowsBounds = previewScrollTrack = previewScrollThumb = Rectangle.Empty;
+        listBounds = previewBounds = previewRowsBounds = previewScrollTrack = previewScrollThumb = attachmentsBounds = Rectangle.Empty;
+        attachmentButtons.Clear();
+        previousAttachmentBounds = nextAttachmentBounds = Rectangle.Empty;
         if (contentBounds.Width <= 0 || contentBounds.Height <= 0)
             return;
+        int treeWidth = Math.Clamp(contentBounds.Width / 5, 110, 160);
+        treeBounds = new Rectangle(contentBounds.X, contentBounds.Y, treeWidth, contentBounds.Height);
+        Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+        tree.Draw(batch, treeBounds, rowHeight, config, cursor, "");
+        batch.Draw(Game1.staminaRect, new Rectangle(treeBounds.Right + 1, contentBounds.Y, 1, contentBounds.Height), UiStyle.Border * config.Opacity);
+        contentBounds = new Rectangle(treeBounds.Right + Divider, contentBounds.Y,
+            Math.Max(0, contentBounds.Width - treeWidth - Divider), contentBounds.Height);
         if (contentBounds.Height < listMin + Divider + previewMin)
         {
             listBounds = contentBounds;
@@ -88,7 +115,6 @@ internal sealed class MailWindow : OsWindow
                 contentBounds.Width, contentBounds.Height - listHeight - Divider);
         }
 
-        Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
         grid.Draw(batch, listBounds, rowHeight, config, cursor, "No mail.",
             isSelected: row => row.Id == selectedId);
         if (previewBounds.IsEmpty)
@@ -118,7 +144,15 @@ internal sealed class MailWindow : OsWindow
         int textWidth = rowWidth;
         RefreshPreview(selected, textWidth, config);
         int headerHeight = lineHeight + 4;
-        int availableHeight = Math.Max(0, previewBounds.Height - Padding * 2 - headerHeight - 4);
+        int attachmentHeight = selected.Record.Attachments.Count > 0 || selected.Record.HasItemCommand
+            ? Math.Max(26, lineHeight + Padding * 2) : 0;
+        if (attachmentHeight > 0)
+        {
+            attachmentsBounds = new Rectangle(previewBounds.X, previewBounds.Bottom - attachmentHeight,
+                previewBounds.Width, attachmentHeight);
+            DrawAttachments(batch, selected.Record, config, cursor);
+        }
+        int availableHeight = Math.Max(0, previewBounds.Height - Padding * 2 - headerHeight - 4 - attachmentHeight);
         previewVisibleLines = availableHeight / Math.Max(1, lineHeight);
         previewFirstLine = Math.Clamp(previewFirstLine, 0, MaxPreviewFirstLine);
         previewRowsBounds = new Rectangle(previewBounds.X + Padding,
@@ -161,7 +195,9 @@ internal sealed class MailWindow : OsWindow
         int previousFirstLine = previewFirstLine;
         previewKey = key;
         previewLines.Clear();
-        (previewTitle, List<string> paragraphs) = GetLetter(selected.Id);
+        previewTitle = selected.Title;
+        List<string> paragraphs = selected.Record.Body.Split('^')
+            .Select(part => string.Join(" ", part.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))).ToList();
         if (textWidth <= 0)
         {
             previewFirstLine = 0;
@@ -185,6 +221,24 @@ internal sealed class MailWindow : OsWindow
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick)
     {
+        if (treeBounds.Contains(cursor) && tree.ReceiveClick(cursor, leftClick))
+        {
+            selectedId = null;
+            previewKey = null;
+            grid.Clear();
+            return;
+        }
+        if (leftClick)
+        {
+            if (previousAttachmentBounds.Contains(cursor)) { firstAttachment = Math.Max(0, firstAttachment - 1); return; }
+            if (nextAttachmentBounds.Contains(cursor)) { firstAttachment++; return; }
+            foreach (var button in attachmentButtons)
+            {
+                if (!button.Bounds.Contains(cursor)) continue;
+                MailArchive.Active?.Claim(button.Attachment);
+                return;
+            }
+        }
         if (grid.ReceiveClick(cursor, leftClick))
             return;
         if (!leftClick)
@@ -192,9 +246,15 @@ internal sealed class MailWindow : OsWindow
         if (!listBounds.IsEmpty && listBounds.Contains(cursor))
         {
             MailRow? row = grid.GetRow(cursor);
-            if (row != null && row.Id != selectedId)
+            if (row != null)
             {
                 selectedId = row.Id;
+                firstAttachment = 0;
+                if (row.Record.Pending)
+                {
+                    MailArchive.Active?.Open(row.Record);
+                    previewKey = null;
+                }
                 previewFirstLine = 0;
                 previewScrollDragOffset = null;
             }
@@ -216,6 +276,7 @@ internal sealed class MailWindow : OsWindow
         => grid.ConfigureColumnWidths(widths, onChanged);
     internal override void DragContent(Point cursor)
     {
+        tree.Drag(cursor);
         grid.Drag(cursor);
         if (previewScrollDragOffset.HasValue && previewScrollTrack.Height > previewScrollThumb.Height)
         {
@@ -226,6 +287,7 @@ internal sealed class MailWindow : OsWindow
     }
     internal override void EndContentDrag()
     {
+        tree.EndDrag();
         grid.EndDrag();
         previewScrollDragOffset = null;
     }
@@ -236,6 +298,16 @@ internal sealed class MailWindow : OsWindow
         Point cursor;
         try { cursor = new Point(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true)); }
         catch { return; }
+        if (treeBounds.Contains(cursor))
+        {
+            tree.ReceiveScroll(delta);
+            return;
+        }
+        if (attachmentsBounds.Contains(cursor))
+        {
+            firstAttachment = Math.Max(0, firstAttachment - Math.Sign(delta));
+            return;
+        }
         if (!listBounds.IsEmpty && listBounds.Contains(cursor))
         {
             grid.ReceiveScroll(delta);
@@ -248,112 +320,12 @@ internal sealed class MailWindow : OsWindow
         }
     }
 
-    // Mirrors CollectionsPage's letters tab: received IDs with mail data, in received
-    // order. The title is the "[#]" suffix ("???" when absent); the body is the prefix.
-    private static MailRow[] GetRows()
+    private MailRow[] GetRows()
     {
-        if (!Context.IsWorldReady)
-            return Array.Empty<MailRow>();
-        Dictionary<string, string> mail = DataLoader.Mail(Game1.content);
-        string playerName = Game1.player.Name;
-        Gender gender = Game1.player.Gender;
-        var rows = new List<MailRow>();
-        foreach (string id in Game1.player.mailReceived)
-        {
-            if (!mail.TryGetValue(id, out string? raw))
-                continue;
-            string[] parts = raw.Split("[#]");
-            string title = parts.Length > 1 ? parts[1] : "???";
-            rows.Add(new MailRow(id, title, GetPreview(parts[0], playerName, gender)));
-        }
-        return rows.ToArray();
-    }
-
-    // Full letter text, parsed like LetterViewerMenu with fromCollection:true:
-    // tokens resolved, custom formatting and item/action commands stripped, line
-    // breaks kept as paragraphs. Interactables are already claimed on first read,
-    // so the pane is text-only just like the vanilla collection viewer.
-    private static (string Title, List<string> Paragraphs) GetLetter(string id)
-    {
-        var empty = new List<string>();
-        if (!Context.IsWorldReady)
-            return ("", empty);
-        Dictionary<string, string> mail = DataLoader.Mail(Game1.content);
-        if (!mail.TryGetValue(id, out string? raw))
-            return ("???", empty);
-        string[] parts = raw.Split("[#]");
-        string title = parts.Length > 1 ? parts[1] : "???";
-        string body = parts[0].Replace("@", Game1.player.Name);
-        body = Dialogue.applyGenderSwitch(Game1.player.Gender, body, altTokenOnly: true);
-        body = StripCustomFormatting(body);
-        body = StripCommands(body, "%action");
-        body = StripCommands(body, "%item");
-        if (body.Contains("%secretsanta", StringComparison.Ordinal))
-        {
-            string replacement = "???";
-            try
-            {
-                if (Game1.season == Season.Winter && Game1.dayOfMonth >= 18 && Game1.dayOfMonth <= 25)
-                    replacement = Utility.GetRandomWinterStarParticipant().displayName;
-            }
-            catch { }
-            body = body.Replace("%secretsanta", replacement, StringComparison.Ordinal);
-        }
-        var paragraphs = new List<string>();
-        foreach (string part in body.Split('^'))
-            paragraphs.Add(string.Join(" ", part.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
-        while (paragraphs.Count > 0 && paragraphs[0] == "")
-            paragraphs.RemoveAt(0);
-        while (paragraphs.Count > 0 && paragraphs[^1] == "")
-            paragraphs.RemoveAt(paragraphs.Count - 1);
-        return (title, paragraphs);
-    }
-
-    // Single-line preview of what the vanilla viewer shows: player/gender tokens
-    // resolved, custom formatting and item/action commands stripped, line breaks
-    // flattened. Secretsanta stays "???" for a stable sort outside Dec 18-25.
-    private static string GetPreview(string body, string playerName, Gender gender)
-    {
-        body = body.Replace("@", playerName);
-        body = Dialogue.applyGenderSwitch(gender, body, altTokenOnly: true);
-        body = StripCustomFormatting(body);
-        body = StripCommands(body, "%action");
-        body = StripCommands(body, "%item");
-        body = body.Replace("%secretsanta", "???").Replace('^', ' ');
-        return string.Join(" ", body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-    }
-
-    private static string StripCommands(string text, string command)
-    {
-        int start = text.IndexOf(command, StringComparison.Ordinal);
-        while (start >= 0)
-        {
-            int end = text.IndexOf("%%", start, StringComparison.Ordinal);
-            if (end < 0)
-                break;
-            text = text.Remove(start, end + 2 - start);
-            start = text.IndexOf(command, StringComparison.Ordinal);
-        }
-        return text;
-    }
-
-    // Mirrors LetterViewerMenu.ApplyCustomFormatting tag removal ([letterbg ...]
-    // and [textcolor ...]) without touching viewer background or text colors.
-    private static string StripCustomFormatting(string text)
-    {
-        for (int start = text.IndexOf('['); start >= 0; start = text.IndexOf('[', start + 1))
-        {
-            int end = text.IndexOf(']', start);
-            if (end < 0)
-                break;
-            string first = text.Substring(start + 1, end - start - 1).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-            if (first == "letterbg" || first == "textcolor")
-            {
-                text = text.Remove(start, end - start + 1);
-                start--;
-            }
-        }
-        return text;
+        IEnumerable<MailRecord> letters = MailArchive.Active?.Letters ?? Array.Empty<MailRecord>();
+        if (tree.SelectedId == "inbox") letters = letters.Where(letter => !letter.Updates);
+        if (tree.SelectedId == "updates") letters = letters.Where(letter => letter.Updates);
+        return letters.Reverse().Select(letter => new MailRow(letter)).ToArray();
     }
 
     private static void DrawTitleCell(SpriteBatch batch, MailRow row, Rectangle bounds, ModConfig config)
@@ -368,6 +340,8 @@ internal sealed class MailWindow : OsWindow
         Rectangle destination = new(bounds.X + Padding + (IconSize - width) / 2,
             bounds.Y + (bounds.Height - height) / 2, width, height);
         batch.Draw(Game1.mouseCursors, destination, source, Color.White * config.Opacity);
+        if (row.Record.Pending)
+            UiStyle.DrawIcon(batch, UiStyle.UnreadMailIcon, new Point(destination.Right - 5, destination.Y - 2), 1, config.Opacity);
         bounds.X += IconSize + Padding;
         bounds.Width -= IconSize + Padding;
         UiText.DrawCell(batch, row.Title, bounds, UiStyle.Primary, config);
@@ -375,15 +349,10 @@ internal sealed class MailWindow : OsWindow
 
     private sealed class MailRow
     {
-        internal string Id { get; }
-        internal string Title { get; }
-        internal string Preview { get; }
-
-        internal MailRow(string id, string title, string preview)
-        {
-            Id = id;
-            Title = title;
-            Preview = preview;
-        }
+        internal MailRecord Record { get; }
+        internal string Id => Record.Id;
+        internal string Title => Record.Title;
+        internal string Preview => string.Join(" ", Record.Body.Replace('^', ' ').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        internal MailRow(MailRecord record) => Record = record;
     }
 }

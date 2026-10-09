@@ -91,6 +91,7 @@ public sealed partial class ModEntry : Mod
         InstallWorldInteractionPatches();
         InstallMiningPatches();
         InstallWalletPatches();
+        InstallMailPatches();
         WalletLedger.Active = walletLedger;
 
         helper.Events.GameLoop.DayStarted += (_, _) =>
@@ -146,6 +147,7 @@ public sealed partial class ModEntry : Mod
         {
             UpdateClickToMove(beforeUpdate: false);
             walletLedger.Sync();
+            SyncMail();
             // Vanilla recreates its HUD menus on load. Keep one Pelicom per local screen.
             if (patchInstalled && config.Enabled && Context.IsWorldReady && !Game1.onScreenMenus.Contains(pelicom.Value))
                 Game1.onScreenMenus.Add(pelicom.Value);
@@ -183,6 +185,7 @@ public sealed partial class ModEntry : Mod
             notificationHistory.ResetAllScreens();
             miningLedger.ClearAll();
             walletLedger.ClearAll();
+            mailArchive.Clear();
             chatHistory.ResetAllScreens();
             dialogueRoutingFailed.ResetAllScreens();
             notificationBubbleRenderer.ResetAllScreens();

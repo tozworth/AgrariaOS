@@ -13,6 +13,7 @@ internal static class UiStyle
     internal static readonly Color Muted = new(150, 150, 150);
     private static readonly Color FullHearts = new(155, 199, 163);
     internal const int MailIcon = 144;
+    internal const int UnreadMailIcon = 132;
     internal const int InventoryIcon = 152;
     internal const int NotificationIcon = 151;
     internal const int ChatIcon = 135;

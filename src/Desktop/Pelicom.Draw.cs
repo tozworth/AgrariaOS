@@ -120,6 +120,8 @@ partial class Pelicom : IClickableMenu
             Point position = new(slot.X + (slot.Width - IconSize * IconScale) / 2,
                 slot.Y + (slot.Height - IconSize * IconScale) / 2);
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
+            if (i == MailEntryIndex && AgrariaOS.Mail.MailArchive.Active?.UnreadCount > 0)
+                UiStyle.DrawIcon(batch, UiStyle.UnreadMailIcon, new Point(slot.Right - 10, slot.Y + 1), 1, config.Opacity);
             if ((i == OverviewEntryIndex && isOverviewMinimized()) || (i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
                 || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == SocialEntryIndex && isSocialMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
                 || (i == BundlesEntryIndex && isBundlesMinimized())
@@ -144,6 +146,8 @@ partial class Pelicom : IClickableMenu
         if (hovered >= 0)
         {
             string label = Entries[hovered].Label;
+            if (hovered == MailEntryIndex && AgrariaOS.Mail.MailArchive.Active?.UnreadCount > 0)
+                label += $" ({AgrariaOS.Mail.MailArchive.Active.UnreadCount} unread)";
             if (hovered == NotificationsEntryIndex && unreadNotifications() > 0)
                 label += $" ({unreadNotifications()} unread)";
             Vector2 size = Game1.smallFont.MeasureString(label) * config.FontScale;

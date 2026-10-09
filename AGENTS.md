@@ -6,6 +6,8 @@ Current features: transparent top-left status readout replacing the clock/money 
 
 Source lives in `src/`: `ModEntry.cs` coordinates per-screen state and SMAPI events, `Integration/ModEntry.HudPatches.cs` contains Harmony installation and hooks, `Configuration/` owns settings, and `Hud/` owns HUD rendering and cosmetic security; `Hud/StatusReadoutRenderer.cs` renders the top-left location/security, date/time, weather/money and journal/zoom readout. `Desktop/WindowManager.cs` owns window lifecycle and input priority, `Desktop/OsWindow.cs` owns shared chrome, and `Desktop/Windows/` contains individual windows. `UI/UiStyle.cs` owns shared colors/icons and `UI/UiText.cs` owns pixel-aligned text drawing. `UI/GridView.cs` and `UI/GridColumn.cs` own the reusable typed grid (sorting, resizing, scrolling and cell rendering); use them for future tables such as Livestock. See `docs/grid-view.md` for the window integration contract.
 
+`Mail/` archives collection and dynamic deliveries in each farmer's save `modData`. Mail uses the shared tree for All / Inbox / Updates, tracks unread mailbox entries, and claims item attachments through the desktop while retaining vanilla mailbox handling for unread letters. See `docs/mail.md` for reward ownership, persistence and verification.
+
 ## Build
 
 - Target `net6.0`; the installed .NET 10 SDK builds it successfully. Stardew supplies MonoGame and its runtime. No Visual Studio, separate MonoGame SDK, or ImGui needed.
