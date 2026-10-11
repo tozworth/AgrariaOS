@@ -16,6 +16,7 @@ internal sealed partial class GridView<TRow> where TRow : class
     private readonly int[] columnWidths;
     private readonly Rectangle[] headers;
     private readonly List<int> visibleColumns;
+    private readonly HashSet<int> autoHidden = new();
     private Action<string[]>? columnVisibilityChanged;
     private Action<Dictionary<string, int>>? columnWidthsChanged;
     private bool widthsChangedDuringDrag;
@@ -83,6 +84,32 @@ internal sealed partial class GridView<TRow> where TRow : class
         EndDrag();
         ClearLayout();
         columnVisibilityChanged = onChanged;
+    }
+
+    // Temporary, unsaved hide for columns with nothing to show (e.g. a uniform
+    // Quality column). User visibility is preserved; the header menu still toggles
+    // the saved preference for when the column has content again.
+    internal void SetColumnAutoHidden(string id, bool hidden)
+    {
+        int index = Array.FindIndex(columns, column => column.Id.Equals(id, StringComparison.Ordinal));
+        if (index < 0)
+            return;
+        bool changed = hidden ? autoHidden.Add(index) : autoHidden.Remove(index);
+        if (!changed)
+            return;
+        ResetHiddenSort();
+        EndDrag();
+        ClearLayout();
+    }
+
+    private List<int> GetEffectiveColumns()
+    {
+        if (autoHidden.Count == 0)
+            return visibleColumns;
+        List<int> effective = visibleColumns.Where(column => !autoHidden.Contains(column)).ToList();
+        // Keep at least one header so layout never divides by zero; the saved
+        // preference still wins once the auto-hidden column has content again.
+        return effective.Count > 0 ? effective : visibleColumns;
     }
 
     // Call with the live source before drawing so stack/value changes are sorted too.

@@ -24,9 +24,10 @@ partial class GridView<TRow> where TRow : class
             return false;
         }
 
-        FitColumns(tableWidth);
+        List<int> effective = GetEffectiveColumns();
+        FitColumns(tableWidth, effective);
         int x = bounds.X + Padding;
-        foreach (int i in visibleColumns)
+        foreach (int i in effective)
         {
             headers[i] = new Rectangle(x, bounds.Y + Padding, columnWidths[i], rowHeight);
             x += columnWidths[i];
@@ -48,30 +49,30 @@ partial class GridView<TRow> where TRow : class
         return true;
     }
 
-    private void FitColumns(int width)
+    private void FitColumns(int width, List<int> effective)
     {
         int minimumTotal = 0;
         long weightTotal = 0;
         Array.Clear(columnWidths);
-        foreach (int i in visibleColumns)
+        foreach (int i in effective)
         {
-            columnWidths[i] = GetMinimumWidth(i, width);
+            columnWidths[i] = GetMinimumWidth(i, width, effective.Count);
             minimumTotal += columnWidths[i];
             weightTotal += Math.Max(0, preferredWidths[i] - columnWidths[i]);
         }
         int used = 0;
-        foreach (int i in visibleColumns)
+        foreach (int i in effective)
         {
             int weight = Math.Max(0, preferredWidths[i] - columnWidths[i]);
-            columnWidths[i] += weightTotal == 0 ? (width - minimumTotal) / visibleColumns.Count
+            columnWidths[i] += weightTotal == 0 ? (width - minimumTotal) / effective.Count
                 : (int)((long)(width - minimumTotal) * weight / weightTotal);
             used += columnWidths[i];
         }
-        columnWidths[visibleColumns[0]] += width - used;
+        columnWidths[effective[0]] += width - used;
     }
 
-    private int GetMinimumWidth(int column, int tableWidth)
-        => Math.Min(columns[column].MinimumWidth, tableWidth / visibleColumns.Count);
+    private int GetMinimumWidth(int column, int tableWidth, int visibleCount = 0)
+        => Math.Min(columns[column].MinimumWidth, tableWidth / Math.Max(1, visibleCount > 0 ? visibleCount : GetEffectiveColumns().Count));
 
     private Rectangle DividerBounds(int column, int rightColumn)
         => headers[column].Width == 0 || headers[rightColumn].Width == 0 ? Rectangle.Empty

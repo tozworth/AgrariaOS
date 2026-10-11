@@ -37,6 +37,7 @@ internal sealed partial class WindowManager
     {
         OverviewWindow.WindowId,
         MailWindow.WindowId,
+        JournalWindow.WindowId,
         InventoryWindow.WindowId,
         LivestockWindow.WindowId,
         SocialWindow.WindowId,
@@ -93,6 +94,13 @@ internal sealed partial class WindowManager
 
     internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(config, saveConfig, lookupAnything, getMovement, FocusWorld));
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
+    internal void OpenJournal()
+    {
+        Open(JournalWindow.WindowId, () => new JournalWindow());
+        // Match the vanilla QuestLog constructor: opening the journal clears the HUD ping.
+        try { Game1.dayTimeMoneyBox.DismissQuestPing(); }
+        catch { }
+    }
     internal void OpenInventory()
     {
         Open(InventoryWindow.WindowId, () => new InventoryWindow(config, lookupAnything: lookupAnything, getTradeShop: GetTradeShop));

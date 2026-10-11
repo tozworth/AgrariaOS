@@ -16,16 +16,17 @@ partial class GridView<TRow> where TRow : class
             UiText.DrawCell(batch, "Not enough space.", bounds, UiStyle.Muted, config);
             return;
         }
-        for (int index = 0; index < visibleColumns.Count; index++)
+        List<int> effective = GetEffectiveColumns();
+        for (int index = 0; index < effective.Count; index++)
         {
-            int i = visibleColumns[index];
+            int i = effective[index];
             batch.Draw(Game1.staminaRect, headers[i], UiStyle.Border * (config.Opacity * 0.45f));
             DrawHeader(batch, i, config);
-            if (index < visibleColumns.Count - 1)
+            if (index < effective.Count - 1)
             {
                 Rectangle divider = new(headers[i].Right - 1, headers[i].Y, 1, rowHeight + 1 + RowsBounds.Height);
                 batch.Draw(Game1.staminaRect, divider, UiStyle.Border * config.Opacity);
-                if (resizingColumn == i || DividerBounds(i, visibleColumns[index + 1]).Contains(cursor))
+                if (resizingColumn == i || DividerBounds(i, effective[index + 1]).Contains(cursor))
                     batch.Draw(Game1.staminaRect, new Rectangle(divider.X, divider.Y, 2, rowHeight), UiStyle.Primary * config.Opacity);
             }
         }
@@ -51,7 +52,7 @@ partial class GridView<TRow> where TRow : class
             else if ((i & 1) != 0)
                 batch.Draw(Game1.staminaRect, row, Color.White * (config.Opacity * 0.025f));
             ModConfig rowConfig = isDimmed?.Invoke(rows[i]) == true && dimmedConfig != null ? dimmedConfig : config;
-            foreach (int column in visibleColumns)
+            foreach (int column in effective)
                 columns[column].DrawCell(batch, rows[i], new Rectangle(headers[column].X, row.Y, headers[column].Width, row.Height), rowConfig);
         }
 

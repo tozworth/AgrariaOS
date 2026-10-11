@@ -38,6 +38,9 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<Pelicom> pelicom = new(() => new Pelicom(Instance.config,
         () => Instance.UsePelicom, Instance.OnPelicomDrawFailed, () => Instance.windowManager.Value.OpenMail(),
         () => Instance.windowManager.Value.IsMinimized(MailWindow.WindowId),
+        () => Instance.windowManager.Value.OpenJournal(),
+        () => Instance.windowManager.Value.IsMinimized(JournalWindow.WindowId),
+        () => { try { return Context.IsWorldReady && Game1.player.hasNewQuestActivity(); } catch { return false; } },
         () => Instance.windowManager.Value.OpenInventory(),
         () => Instance.windowManager.Value.IsMinimized(InventoryWindow.WindowId),
         () => Instance.windowManager.Value.OpenLivestock(),
@@ -160,6 +163,8 @@ public sealed partial class ModEntry : Mod
             }
             RouteDialogue();
             windowManager.Value.Update(helper.Input);
+            try { pelicom.Value.Update(helper.Input); }
+            catch { }
             UpdateHardwareCursor();
         };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>

@@ -42,6 +42,7 @@ partial class WindowManager
                     {
                         case OverviewWindow.WindowId: OpenOverview(); break;
                         case MailWindow.WindowId: OpenMail(); break;
+                        case JournalWindow.WindowId: OpenJournal(); break;
                         case InventoryWindow.WindowId: OpenInventory(); break;
                         case LivestockWindow.WindowId: OpenLivestock(); break;
                         case SocialWindow.WindowId: OpenSocial(); break;

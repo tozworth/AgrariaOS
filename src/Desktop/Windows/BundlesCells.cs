@@ -14,6 +14,45 @@ namespace AgrariaOS.Desktop.Windows;
 
 partial class BundlesWindow : OsWindow
 {
+    private static void DrawBundleCell(SpriteBatch batch, BundleRow row, Rectangle bounds, ModConfig config)
+    {
+        Color color;
+        bool strike;
+        if (row.BundleComplete)
+        {
+            color = UiStyle.Muted;
+            strike = true;
+        }
+        else if (row.Completed)
+        {
+            color = UiStyle.Muted;
+            strike = false;
+        }
+        else
+        {
+            color = UiStyle.Primary;
+            strike = false;
+        }
+        UiText.DrawCell(batch, row.BundleName, bounds, color, config);
+        if (!strike)
+            return;
+        const int padding = 4;
+        int width = bounds.Width - padding * 2 - 1;
+        if (width <= 0 || string.IsNullOrEmpty(row.BundleName))
+            return;
+        string fitted = UiText.Fit(row.BundleName, width, config.FontScale);
+        if (string.IsNullOrEmpty(fitted))
+            return;
+        Vector2 size;
+        try { size = Game1.smallFont.MeasureString(fitted) * config.FontScale; }
+        catch { return; }
+        if (size.X <= 0)
+            return;
+        int x = bounds.X + padding;
+        int y = bounds.Y + bounds.Height / 2;
+        batch.Draw(Game1.staminaRect, new Rectangle(x, y, Math.Max(1, (int)MathF.Round(size.X)), 1), color * config.Opacity);
+    }
+
     private static void DrawItemCell(SpriteBatch batch, BundleRow row, Rectangle bounds, ModConfig config)
     {
         if (!string.IsNullOrEmpty(row.IconId))

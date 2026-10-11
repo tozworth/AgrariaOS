@@ -20,35 +20,44 @@ internal sealed partial class Pelicom : IClickableMenu
     private const int BundlesEntryIndex = 5;
     private const int WalletEntryIndex = 6;
     private const int MailEntryIndex = 7;
+    private const int JournalEntryIndex = 8;
     private const int InventoryEntryIndex = 1;
     private const int LivestockEntryIndex = 2;
     private const int SocialEntryIndex = 3;
     private const int MiningEntryIndex = 4;
-    private const int ChatEntryIndex = 8;
-    private const int NotesEntryIndex = 9;
-    private const int NotificationsEntryIndex = 10;
-    private const int ExitEntryIndex = 11;
-    private static readonly (int Emoji, string Label)[] Entries =
+    private const int ChatEntryIndex = 9;
+    private const int NotesEntryIndex = 10;
+    private const int NotificationsEntryIndex = 11;
+    private const int ExitEntryIndex = 12;
+    private static readonly (string Id, int Emoji, string Label)[] Entries =
     {
-        (107, "Overview"),
-        (UiStyle.InventoryIcon, "Inventory"),
-        (74, "Livestock"),
-        (UiStyle.SocialIcon, "Social"),
-        (121, "Mining Ledger"),
-        (84, "Bundles"),
-        (41, "Wallet"),
-        (UiStyle.MailIcon, "Mail"),
-        (UiStyle.ChatIcon, "Chat"),
-        (139, "Notes"),
-        (UiStyle.NotificationIcon, "Notifications"),
-        (131, "Exit")
+        ("overview", 107, "Overview"),
+        ("inventory", UiStyle.InventoryIcon, "Inventory"),
+        ("livestock", 74, "Livestock"),
+        ("social", UiStyle.SocialIcon, "Social"),
+        ("mining", 121, "Mining Ledger"),
+        ("bundles", 84, "Bundles"),
+        ("wallet", 41, "Wallet"),
+        ("mail", UiStyle.MailIcon, "Mail"),
+        ("journal", 47, "Journal"),
+        ("chat", UiStyle.ChatIcon, "Chat"),
+        ("notes", 139, "Notes"),
+        ("notifications", UiStyle.NotificationIcon, "Notifications"),
+        ("exit", 131, "Exit")
     };
+    private static readonly Dictionary<string, int> EntryIndexById = Entries
+        .Select((entry, index) => (entry.Id, index))
+        .ToDictionary(pair => pair.Id, pair => pair.index, StringComparer.Ordinal);
+    private static string[] DefaultOrder => Entries.Select(entry => entry.Id).ToArray();
 
     private readonly ModConfig config;
     private readonly Func<bool> isEnabled;
     private readonly Action<Exception> onDrawFailed;
     private readonly Action openMail;
     private readonly Func<bool> isMailMinimized;
+    private readonly Action openJournal;
+    private readonly Func<bool> isJournalMinimized;
+    private readonly Func<bool> hasNewQuestActivity;
     private readonly Action openInventory;
     private readonly Func<bool> isInventoryMinimized;
     private readonly Action openLivestock;
@@ -76,6 +85,14 @@ internal sealed partial class Pelicom : IClickableMenu
     private readonly Action saveConfig;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
+    // Press-to-reorder state. The press suppresses the world click; release without
+    // movement activates the icon, while movement past the threshold starts a drag.
+    private int? pressedEntry;
+    private bool pressedOnStrip;
+    private Point pressCursor;
+    private bool dragging;
+    // Insertion index within the visible order excluding the dragged entry.
+    private int? dropPosition;
     // The strip draws inside Game1.drawHUD via onScreenMenus, so its hover tip would sit
     // below desktop windows drawn later in RenderedHud. Remember the tip and replay it
     // above windows through DrawTooltip.
@@ -83,7 +100,7 @@ internal sealed partial class Pelicom : IClickableMenu
     private string pendingTooltipLabel = "";
 
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
-        Action openMail, Func<bool> isMailMinimized, Action openInventory, Func<bool> isInventoryMinimized,
+        Action openMail, Func<bool> isMailMinimized, Action openJournal, Func<bool> isJournalMinimized, Func<bool> hasNewQuestActivity, Action openInventory, Func<bool> isInventoryMinimized,
         Action openLivestock, Func<bool> isLivestockMinimized,
         Action openSocial, Func<bool> isSocialMinimized,
         Action openNotifications, Func<bool> isNotificationsMinimized, Func<int> unreadNotifications,
@@ -99,6 +116,9 @@ internal sealed partial class Pelicom : IClickableMenu
         this.onDrawFailed = onDrawFailed;
         this.openMail = openMail;
         this.isMailMinimized = isMailMinimized;
+        this.openJournal = openJournal;
+        this.isJournalMinimized = isJournalMinimized;
+        this.hasNewQuestActivity = hasNewQuestActivity;
         this.openInventory = openInventory;
         this.isInventoryMinimized = isInventoryMinimized;
         this.openLivestock = openLivestock;
@@ -132,7 +152,7 @@ internal sealed partial class Pelicom : IClickableMenu
     internal bool IsInteractive => IsVisible && Game1.activeClickableMenu == null;
 
     // Native HUD dispatch consumes clicks inside this rail before they reach world/tool actions.
-    // Overview, Inventory, Livestock, Social, Mining Ledger, Bundles, Mail, Chat, Notes and Notifications open desktop windows; Exit terminates the game.
+    // Overview, Inventory, Livestock, Social, Mining Ledger, Bundles, Mail, Journal, Chat, Notes and Notifications open desktop windows; Exit terminates the game.
 
 
 

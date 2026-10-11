@@ -28,6 +28,7 @@ partial class Pelicom : IClickableMenu
             drawnBounds = Rectangle.Empty;
             pendingTooltip = Rectangle.Empty;
             pendingTooltipLabel = "";
+            CancelPress();
             onDrawFailed(ex);
         }
     }
@@ -66,8 +67,12 @@ partial class Pelicom : IClickableMenu
         int mouseX = Game1.getMouseX(ui_scale: true);
         int mouseY = Game1.getMouseY(ui_scale: true);
         int hovered = -1;
+        List<int> order = GetDisplayOrder();
+        int visibleCount = order.Count;
+        int bottomCount = Math.Min(BottomEntryCount, visibleCount);
+        int topCount = visibleCount - bottomCount;
         int length = horizontal ? strip.Width : strip.Height;
-        int endGroup = length - TopPadding - BottomEntryCount * SlotHeight;
+        int endGroup = length - TopPadding - bottomCount * SlotHeight;
         int separator = endGroup - TopPadding;
         string clock = horizontal ? StatusReadoutRenderer.FormatTime(Game1.timeOfDay, config.Use24HourClock) : "";
         Vector2 clockSize = Game1.smallFont.MeasureString(clock);
@@ -91,16 +96,13 @@ partial class Pelicom : IClickableMenu
         if (horizontal && startLimit >= TopPadding && clockSize.Y + 1 <= strip.Height)
             UiText.Draw(batch, clock, new Vector2(separator - TopPadding - clockSize.X,
                 strip.Y + (strip.Height - clockSize.Y) / 2), UiStyle.Primary, config, scale: 1f);
-        bool showBundles;
-        try { showBundles = isBundlesAvailable(); }
-        catch { showBundles = false; }
+        bool isDraggingRail = dragging && pressedEntry.HasValue;
         int topOffset = TopPadding;
-        for (int i = 0; i < Entries.Length; i++)
+        for (int pos = 0; pos < order.Count; pos++)
         {
-            if (i == BundlesEntryIndex && !showBundles)
-                continue;
-            bool isBottomEntry = i >= Entries.Length - BottomEntryCount;
-            int offset = isBottomEntry ? endGroup + (i - (Entries.Length - BottomEntryCount)) * SlotHeight
+            int i = order[pos];
+            bool isBottomEntry = pos >= topCount;
+            int offset = isBottomEntry ? endGroup + (pos - topCount) * SlotHeight
                 : topOffset;
             if (!isBottomEntry)
                 topOffset += SlotHeight;
@@ -111,7 +113,15 @@ partial class Pelicom : IClickableMenu
                 continue;
             drawnSlots[i] = slot;
 
-            if (IsInteractive && slot.Contains(mouseX, mouseY))
+            bool isDragged = isDraggingRail && pressedEntry == i;
+            if (isDragged)
+            {
+                // Leave a gap at the source while the ghost follows the cursor.
+                batch.Draw(Game1.staminaRect, slot, UiStyle.Background * config.Opacity);
+                continue;
+            }
+
+            if (IsInteractive && !isDraggingRail && slot.Contains(mouseX, mouseY))
             {
                 hovered = i;
                 batch.Draw(Game1.staminaRect, slot, UiStyle.Border * config.Opacity);
@@ -122,7 +132,14 @@ partial class Pelicom : IClickableMenu
             UiStyle.DrawIcon(batch, Entries[i].Emoji, position, IconScale, config.Opacity);
             if (i == MailEntryIndex && AgrariaOS.Mail.MailArchive.Active?.UnreadCount > 0)
                 UiStyle.DrawIcon(batch, UiStyle.UnreadMailIcon, new Point(slot.Right - 10, slot.Y + 1), 1, config.Opacity);
-            if ((i == OverviewEntryIndex && isOverviewMinimized()) || (i == MailEntryIndex && isMailMinimized()) || (i == InventoryEntryIndex && isInventoryMinimized())
+            bool hasJournalActivity = false;
+            try { hasJournalActivity = i == JournalEntryIndex && hasNewQuestActivity(); }
+            catch { }
+            if (hasJournalActivity)
+                UiStyle.DrawIcon(batch, UiStyle.UnreadMailIcon, new Point(slot.Right - 10, slot.Y + 1), 1, config.Opacity);
+            if ((i == OverviewEntryIndex && isOverviewMinimized()) || (i == MailEntryIndex && isMailMinimized())
+                || (i == JournalEntryIndex && isJournalMinimized())
+                || (i == InventoryEntryIndex && isInventoryMinimized())
                 || (i == LivestockEntryIndex && isLivestockMinimized()) || (i == SocialEntryIndex && isSocialMinimized()) || (i == MiningEntryIndex && isMiningLedgerMinimized())
                 || (i == BundlesEntryIndex && isBundlesMinimized())
                 || (i == WalletEntryIndex && isWalletMinimized())
@@ -143,11 +160,23 @@ partial class Pelicom : IClickableMenu
             }
         }
 
-        if (hovered >= 0)
+        if (isDraggingRail)
+            DrawDragFeedback(batch, strip, horizontal, mouseX, mouseY);
+
+        if (hovered >= 0 && !isDraggingRail)
         {
             string label = Entries[hovered].Label;
             if (hovered == MailEntryIndex && AgrariaOS.Mail.MailArchive.Active?.UnreadCount > 0)
                 label += $" ({AgrariaOS.Mail.MailArchive.Active.UnreadCount} unread)";
+            if (hovered == JournalEntryIndex)
+            {
+                try
+                {
+                    if (hasNewQuestActivity())
+                        label += " (!)";
+                }
+                catch { }
+            }
             if (hovered == NotificationsEntryIndex && unreadNotifications() > 0)
                 label += $" ({unreadNotifications()} unread)";
             Vector2 size = Game1.smallFont.MeasureString(label) * config.FontScale;
@@ -169,4 +198,62 @@ partial class Pelicom : IClickableMenu
         drawnBounds = strip;
     }
 
+    private void DrawDragFeedback(SpriteBatch batch, Rectangle strip, bool horizontal, int mouseX, int mouseY)
+    {
+        if (!pressedEntry.HasValue)
+            return;
+        int dragged = pressedEntry.Value;
+        // Insertion indicator within the order excluding the dragged entry.
+        List<int> remaining = GetDisplayOrder();
+        remaining.Remove(dragged);
+        int insertAt = Math.Clamp(dropPosition ?? remaining.Count, 0, remaining.Count);
+        Rectangle? prevSlot = null;
+        Rectangle? nextSlot = null;
+        for (int pos = insertAt - 1; pos >= 0; pos--)
+        {
+            Rectangle slot = drawnSlots[remaining[pos]];
+            if (slot.IsEmpty)
+                continue;
+            prevSlot = slot;
+            break;
+        }
+        for (int pos = insertAt; pos < remaining.Count; pos++)
+        {
+            Rectangle slot = drawnSlots[remaining[pos]];
+            if (slot.IsEmpty)
+                continue;
+            nextSlot = slot;
+            break;
+        }
+        if (prevSlot.HasValue || nextSlot.HasValue)
+        {
+            Rectangle indicator;
+            if (horizontal)
+            {
+                int x;
+                if (prevSlot.HasValue && nextSlot.HasValue)
+                    x = (prevSlot.Value.Right + nextSlot.Value.Left) / 2;
+                else if (prevSlot.HasValue)
+                    x = prevSlot.Value.Right;
+                else
+                    x = nextSlot!.Value.Left;
+                indicator = new Rectangle(x - 1, strip.Y + 4, 2, StripWidth - 8);
+            }
+            else
+            {
+                int y;
+                if (prevSlot.HasValue && nextSlot.HasValue)
+                    y = (prevSlot.Value.Bottom + nextSlot.Value.Top) / 2;
+                else if (prevSlot.HasValue)
+                    y = prevSlot.Value.Bottom;
+                else
+                    y = nextSlot!.Value.Top;
+                indicator = new Rectangle(strip.X + 4, y - 1, StripWidth - 8, 2);
+            }
+            batch.Draw(Game1.staminaRect, indicator, UiStyle.Primary * config.Opacity);
+        }
+        // Ghost icon follows the cursor.
+        int half = IconSize * IconScale / 2;
+        UiStyle.DrawIcon(batch, Entries[dragged].Emoji, new Point(mouseX - half, mouseY - half), IconScale, 1f);
+    }
 }

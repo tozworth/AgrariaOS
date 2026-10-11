@@ -11,10 +11,11 @@ partial class GridView<TRow> where TRow : class
     {
         if (!leftClick)
             return false;
-        for (int index = 0; index < visibleColumns.Count - 1; index++)
+        List<int> effective = GetEffectiveColumns();
+        for (int index = 0; index < effective.Count - 1; index++)
         {
-            int i = visibleColumns[index];
-            int right = visibleColumns[index + 1];
+            int i = effective[index];
+            int right = effective[index + 1];
             if (!DividerBounds(i, right).Contains(cursor))
                 continue;
             foreach (int column in visibleColumns)
@@ -26,7 +27,7 @@ partial class GridView<TRow> where TRow : class
             resizeRightWidth = columnWidths[right];
             return true;
         }
-        foreach (int i in visibleColumns)
+        foreach (int i in effective)
         {
             if (!headers[i].Contains(cursor))
                 continue;
@@ -126,7 +127,7 @@ partial class GridView<TRow> where TRow : class
 
     private void ResetHiddenSort()
     {
-        if (SortColumn >= 0 && !visibleColumns.Contains(SortColumn))
+        if (SortColumn >= 0 && (!visibleColumns.Contains(SortColumn) || autoHidden.Contains(SortColumn)))
         {
             SortColumn = -1;
             SortDescending = false;

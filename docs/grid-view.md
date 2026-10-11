@@ -42,6 +42,12 @@ the chest window's choices. These survive closing windows and game reloads.
 Obsolete column IDs are ignored, new columns start visible, and a config hiding
 every column restores the first header so the menu remains accessible.
 
+Windows can also call `SetColumnAutoHidden(id, hidden)` for content-driven columns
+(e.g. Bundles hides Quality while the current view has uniform requirements).
+Auto-hides are unsaved, never fire the visibility callback, keep the saved
+preference for when the column has content again, and reset sort if the sorted
+column auto-hides.
+
 Also forward `ConfigureColumnWidths` to the grid. The desktop manager restores
 preferred widths from `ModConfig.WindowColumnWidths`, keyed by farmer, window ID,
 and stable column ID, and saves them once at the end of a divider drag. Widths

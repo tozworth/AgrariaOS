@@ -56,7 +56,7 @@ partial class ModEntry : Mod
             if (!Game1.IsChatting && pelicom.Value.isWithinBounds(cursor.X, cursor.Y))
             {
                 if (leftClick)
-                    pelicom.Value.receiveLeftClick(cursor.X, cursor.Y);
+                    pelicom.Value.ReceivePress(cursor);
                 else
                     pelicom.Value.receiveRightClick(cursor.X, cursor.Y);
                 Helper.Input.Suppress(e.Button);

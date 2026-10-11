@@ -24,7 +24,7 @@ internal sealed partial class BundlesWindow : OsWindow
     private readonly LookupAnythingIntegration? lookupAnything;
     private readonly GridView<BundleRow> grid = new(
         GridColumn<BundleRow>.Create("Bundle", 140, 36, row => row.BundleName, row => row.BundleName,
-            comparer: StringComparer.CurrentCultureIgnoreCase, textColor: UiStyle.Muted, id: "bundle"),
+            comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawBundleCell, id: "bundle"),
         GridColumn<BundleRow>.Create("Item", 220, 44, row => row.ItemName, row => row.ItemName,
             comparer: StringComparer.CurrentCultureIgnoreCase, drawCell: DrawItemCell, id: "item"),
         GridColumn<BundleRow>.Create("Qty", 64, 28, row => row.QtyText, row => row.Qty,
@@ -103,6 +103,10 @@ internal sealed partial class BundlesWindow : OsWindow
             rows = Array.Empty<BundleRow>();
             footer = "";
         }
+        // Quality only matters when the current view mixes requirements (e.g. the
+        // Quality Crops bundle); otherwise the column would sit mostly empty.
+        bool showQuality = rows.Length > 1 && rows.Any(row => row.Quality != rows[0].Quality);
+        grid.SetColumnAutoHidden("quality", !showQuality);
         grid.SetRows(rows);
 
         int rowHeight = grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding);

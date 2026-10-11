@@ -39,6 +39,9 @@ public sealed class ModConfig
     public bool ShowWeather { get; set; } = true;
     public bool ShowChatTimestamps { get; set; } = true;
     public Dictionary<long, PelicomEdge> PelicomPositions { get; set; } = new();
+    // Pelicom icon order (entry ids, top-to-bottom or left-to-right), per farmer.
+    // The last two ids are shown anchored to the far end of the strip.
+    public Dictionary<long, List<string>> PelicomOrder { get; set; } = new();
     // Farmer IDs survive reloads and split-screen reconnects; screen IDs don't.
     public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
     // Open windows (back-to-front) with minimized flags, per farmer. Chest and lookup windows are transient.
@@ -63,6 +66,20 @@ public sealed class ModConfig
         foreach (long farmerId in PelicomPositions.Keys.ToArray())
             if (!Enum.IsDefined(typeof(PelicomEdge), PelicomPositions[farmerId]))
                 PelicomPositions.Remove(farmerId);
+        PelicomOrder ??= new();
+        foreach (long farmerId in PelicomOrder.Keys.ToArray())
+        {
+            List<string>? order = PelicomOrder[farmerId];
+            if (order == null)
+            {
+                PelicomOrder.Remove(farmerId);
+                continue;
+            }
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            PelicomOrder[farmerId] = order.Where(id => !string.IsNullOrWhiteSpace(id) && seen.Add(id)).ToList();
+            if (PelicomOrder[farmerId].Count == 0)
+                PelicomOrder.Remove(farmerId);
+        }
         foreach (long farmerId in WindowLayouts.Keys.ToArray())
         {
             Dictionary<string, WindowPlacement>? layouts = WindowLayouts[farmerId];
