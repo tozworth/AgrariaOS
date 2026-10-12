@@ -105,8 +105,7 @@ internal sealed partial class OverviewWindow : OsWindow
         Rectangle body = tabs.Draw(batch, contentBounds, config, cursor);
         grid.Draw(batch, body, grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding),
             config, cursor, Context.IsWorldReady ? "No objects." : "No location.",
-            isSelected: row => selection.Contains(row.StableKey),
-            footerText: $"Selected {selection.Count}/{ClickToMove.MaxQueued}  |  Ctrl: toggle  Shift: range");
+            isSelected: row => selection.Contains(row.StableKey));
     }
 
     internal override void ReceiveContentClick(Point cursor, bool leftClick)

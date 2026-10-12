@@ -33,7 +33,8 @@ partial class OverviewWindow : OsWindow
         Seat,
         StaticTile,
         DynamicTile,
-        Fridge
+        Fridge,
+        Transition
     }
 
     internal enum StaticKind
@@ -54,6 +55,7 @@ partial class OverviewWindow : OsWindow
         internal string DistanceText { get; }
         internal string StableKey { get; }
         internal object? Entity { get; }
+        internal MapTransition? Transition { get; private init; }
         private readonly GameLocation location;
         private readonly RowKind kind;
         private readonly Point tile;
@@ -64,6 +66,13 @@ partial class OverviewWindow : OsWindow
         private readonly int tileIndex;
         private readonly string? action;
         private readonly Point fridgePosition;
+
+        internal static OverviewRow ForTransition(GameLocation loc, MapTransition transition, Point farmerTile)
+        {
+            Point tile = transition.NearestTile(farmerTile);
+            return new OverviewRow(loc, RowKind.Transition, null, tile, tile.ToVector2(), transition.Name,
+                "Warp", TileDistance(farmerTile, tile), transition.Key) { Transition = transition };
+        }
 
         private OverviewRow(GameLocation location, RowKind kind, object? entity, Point tile, Vector2 tileKey,
             string name, string category, float distance, string stableKey,
@@ -207,6 +216,8 @@ partial class OverviewWindow : OsWindow
                     return location.buildings.Contains(building);
                 case RowKind.Seat when Entity is MapSeat seat:
                     return location.mapSeats.Contains(seat);
+                case RowKind.Transition when Transition != null:
+                    return Transition.IsValid();
                 case RowKind.StaticTile when staticTile != null:
                     if (!location.isTileOnMap(tile))
                         return false;

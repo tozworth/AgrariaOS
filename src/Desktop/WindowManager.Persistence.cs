@@ -52,6 +52,7 @@ partial class WindowManager
                         case NotificationsWindow.WindowId: OpenNotifications(notifications); break;
                         case ChatWindow.WindowId: OpenChat(chat); break;
                         case NotesWindow.WindowId: OpenNotes(); break;
+                        case OptionsWindow.WindowId: OpenOptions(); break;
                         default: continue;
                     }
                     if (state.IsMinimized && windows.FirstOrDefault(window => window.Id == state.Id) is { } opened)
@@ -147,10 +148,11 @@ partial class WindowManager
                 if (members.Count < 2)
                     continue;
                 OsWindow active = members.FirstOrDefault(member => string.Equals(member.Id, state.ActiveId, StringComparison.Ordinal)) ?? members[0];
-                WindowPlacement? placement = members.Select(member => member.GetPlacement()).FirstOrDefault(placement => placement != null)
-                    ?? active.GetPlacement();
+                // Restore runs before the first layout, so member bounds (and GetPlacement) are still empty.
+                WindowPlacement? placement = members.Select(member => layouts?.GetValueOrDefault(member.Id))
+                    .FirstOrDefault(placement => placement != null);
                 var group = new WindowTabGroup(members, active, placement ?? new WindowPlacement { X = 0, Y = 0, Width = 420, Height = 260 });
-                // Members already carry the saved shared placement; the next draw syncs bounds.
+                // The next draw applies the saved shared placement and syncs member bounds.
                 tabGroups.Add(group);
                 group.SetActive(active);
                 bool minimized = members.All(member => member.IsMinimized);

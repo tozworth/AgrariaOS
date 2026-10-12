@@ -8,6 +8,8 @@ Source lives in `src/`: `ModEntry.cs` coordinates per-screen state and SMAPI eve
 
 `Mail/` archives collection and dynamic deliveries in each farmer's save `modData`. Mail uses the shared tree for All / Inbox / Updates, tracks unread mailbox entries, and claims item attachments through the desktop while retaining vanilla mailbox handling for unread letters. See `docs/mail.md` for reward ownership, persistence and verification.
 
+Options uses vanilla's localized headers and setting actions in a category tree and Agraria-styled right pane. `UI/FormControls.cs` owns shared field, checkbox, button, dropdown and slider styling; `UI/DropdownList.cs` owns popup layout and navigation, and `TextEntry` shares the field style. See `docs/options.md` for integration and verification.
+
 ## Build
 
 - Target `net6.0`; the installed .NET 10 SDK builds it successfully. Stardew supplies MonoGame and its runtime. No Visual Studio, separate MonoGame SDK, or ImGui needed.

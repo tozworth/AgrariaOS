@@ -10,6 +10,10 @@ namespace AgrariaOS.Desktop;
 
 partial class Pelicom : IClickableMenu
 {
+    // Vanilla draws on-screen menus before HUD messages in the same UI batch,
+    // so this follows the bell's current visible slot, including custom ordering.
+    internal Rectangle NotificationBounds => IsVisible ? drawnSlots[NotificationsEntryIndex] : Rectangle.Empty;
+
     private void SetPosition(PelicomEdge edge)
     {
         config.PelicomPositions[Game1.player.UniqueMultiplayerID] = edge;
@@ -32,13 +36,31 @@ partial class Pelicom : IClickableMenu
         return new Rectangle(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
     }
 
-    // Visible entry indices in display order. The last BottomEntryCount entries are
-    // anchored to the far end of the strip. Bundles is omitted when unavailable.
-    private List<int> GetDisplayOrder()
+    private List<int> GetDisplayOrder() => GetDisplayOrder(out _);
+
+    private List<int> GetDisplayOrder(out int endCount)
     {
         bool showBundles;
         try { showBundles = isBundlesAvailable(); }
         catch { showBundles = false; }
+        List<int> full = GetFullOrder();
+        HashSet<string> endEntries = GetEndEntries(full);
+        List<int> visible = full.Where(index => index != BundlesEntryIndex || showBundles).ToList();
+        endCount = visible.Count(index => endEntries.Contains(Entries[index].Id));
+        return visible.Where(index => !endEntries.Contains(Entries[index].Id))
+            .Concat(visible.Where(index => endEntries.Contains(Entries[index].Id))).ToList();
+    }
+
+    private HashSet<string> GetEndEntries(List<int> full)
+    {
+        if (config.PelicomEndEntries.TryGetValue(Game1.player.UniqueMultiplayerID, out var saved))
+            return new HashSet<string>(saved, StringComparer.Ordinal);
+        return full.TakeLast(DefaultEndEntryCount).Select(index => Entries[index].Id)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private List<int> GetFullOrder()
+    {
         List<string> stored;
         try
         {
@@ -57,8 +79,6 @@ partial class Pelicom : IClickableMenu
                 continue;
             if (!EntryIndexById.TryGetValue(id, out int index))
                 continue;
-            if (index == BundlesEntryIndex && !showBundles)
-                continue;
             ordered.Add(index);
         }
         foreach (string id in DefaultOrder)
@@ -66,14 +86,16 @@ partial class Pelicom : IClickableMenu
             if (!seen.Add(id))
                 continue;
             int index = EntryIndexById[id];
-            if (index == BundlesEntryIndex && !showBundles)
-                continue;
-            ordered.Add(index);
+            int exitPosition = ordered.IndexOf(ExitEntryIndex);
+            if (index == OptionsEntryIndex && exitPosition >= 0)
+                ordered.Insert(exitPosition, index);
+            else
+                ordered.Add(index);
         }
         return ordered;
     }
 
-    private void CommitReorder(int draggedEntry, int dropVisibleIndex)
+    private void CommitReorder(int draggedEntry, int dropVisibleIndex, bool intoEndGroup)
     {
         long farmerId;
         try { farmerId = Game1.player.UniqueMultiplayerID; }
@@ -81,27 +103,10 @@ partial class Pelicom : IClickableMenu
         bool showBundles;
         try { showBundles = isBundlesAvailable(); }
         catch { showBundles = false; }
-        if (!config.PelicomOrder.TryGetValue(farmerId, out List<string>? saved) || saved == null)
-        {
-            saved = new List<string>(DefaultOrder);
-            config.PelicomOrder[farmerId] = saved;
-        }
-        // Normalize the stored order to the full known set before moving.
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var full = new List<string>(Entries.Length);
-        foreach (string id in saved)
-        {
-            if (string.IsNullOrWhiteSpace(id) || !seen.Add(id))
-                continue;
-            if (!EntryIndexById.ContainsKey(id))
-                continue;
-            full.Add(id);
-        }
-        foreach (string id in DefaultOrder)
-        {
-            if (seen.Add(id))
-                full.Add(id);
-        }
+        List<int> normalized = GetFullOrder();
+        HashSet<string> endEntries = GetEndEntries(normalized);
+        List<string> full = normalized.Select(index => Entries[index].Id)
+            .OrderBy(id => endEntries.Contains(id)).ToList();
         string draggedId = Entries[draggedEntry].Id;
         full.RemoveAll(id => id == draggedId);
         // Map the visible insertion index (excluding the dragged entry) back to
@@ -122,7 +127,12 @@ partial class Pelicom : IClickableMenu
         if (storedIndex < 0)
             storedIndex = full.Count;
         full.Insert(storedIndex, draggedId);
+        if (intoEndGroup)
+            endEntries.Add(draggedId);
+        else
+            endEntries.Remove(draggedId);
         config.PelicomOrder[farmerId] = full;
+        config.PelicomEndEntries[farmerId] = full.Where(endEntries.Contains).ToList();
         saveConfig();
     }
 
@@ -131,7 +141,9 @@ partial class Pelicom : IClickableMenu
         try
         {
             long farmerId = Game1.player.UniqueMultiplayerID;
-            if (config.PelicomOrder.Remove(farmerId))
+            bool changed = config.PelicomOrder.Remove(farmerId);
+            changed |= config.PelicomEndEntries.Remove(farmerId);
+            if (changed)
                 saveConfig();
         }
         catch { }

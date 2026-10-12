@@ -19,6 +19,8 @@ internal sealed record InteractRequest(ApproachTarget? Move, Func<Point> Tile, F
     internal InteractionKind Kind { get; init; }
     internal Tool? Tool { get; init; }
     internal Func<Farmer, bool>? InReach { get; init; }
+    internal Point? WalkDestination { get; init; }
+    internal Point? WarpDestination { get; init; }
 }
 
 /// <summary>Finds interaction targets without triggering side effects.</summary>

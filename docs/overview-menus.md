@@ -1,5 +1,7 @@
 # Overview menus
 
+Map transitions appear under Warp, with destination names and grouped entrance tiles. See [Overview warps](overview-warps.md) for dynamic discovery, native access checks and verification.
+
 Right-click an NPC in Overview for **Talk**, **Gift**, and **Approach**. Gift lists backpack stacks under Loved and Liked, sorted by name, with quality and quantity shown. Stardrop Tea appears under Loved. Neutral, disliked, hated, quest and non-giftable items are excluded. Gift is disabled when no listed stack can currently be given. Daily/weekly limits, birthdays, spouses, divorce, sleeping/invisible NPCs, first-year green rain and NPC item refusals are checked when opening, while the menu is open, and on arrival.
 
 Selecting a gift walks into range and offers one item from that exact stack through the native NPC item-receiving action. NPC movement retains the selected gift callback. Inventory changes, NPC removal, map changes and day changes invalidate pending actions. The selected toolbar slot and stow state are preserved. Native delivery/quest handling and gift reactions still apply. Talk temporarily stows the carried item and invokes the selected NPC's native dialogue/social/shop action, so holding a gift does not give it accidentally. Pets and horses keep their generic interactions.

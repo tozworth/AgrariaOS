@@ -64,7 +64,10 @@ public sealed partial class ModEntry : Mod
         () => Instance.windowManager.Value.IsMinimized(WalletWindow.WindowId),
         () => Instance.windowManager.Value.OpenOverview(),
         () => Instance.windowManager.Value.IsMinimized(OverviewWindow.WindowId),
-        () => Instance.Helper.WriteConfig(Instance.config)));
+        () => Instance.windowManager.Value.OpenOptions(),
+        () => Instance.windowManager.Value.IsMinimized(OptionsWindow.WindowId),
+        () => Instance.Helper.WriteConfig(Instance.config),
+        id => Instance.windowManager.Value.TryMinimize(id)));
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
         () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything,
@@ -92,6 +95,7 @@ public sealed partial class ModEntry : Mod
         InstallHudPatches();
         InstallDesktopPausePatches();
         InstallWorldInteractionPatches();
+        InstallFurnitureInputPatches();
         InstallMiningPatches();
         InstallWalletPatches();
         InstallMailPatches();

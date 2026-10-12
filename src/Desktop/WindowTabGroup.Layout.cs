@@ -77,7 +77,8 @@ partial class WindowTabGroup
 
     internal WindowResizeEdges GetResizeEdges(Point cursor)
     {
-        if (!Bounds.Contains(cursor) || CloseBounds.Contains(cursor) || MinimizeBounds.Contains(cursor))
+        if (!Bounds.Contains(cursor) || CloseBounds.Contains(cursor) || MinimizeBounds.Contains(cursor)
+            || Active.GetTitlebarActionAt(cursor) != null)
             return WindowResizeEdges.None;
         const int border = 4;
         const int grip = 12;

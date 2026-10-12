@@ -126,6 +126,8 @@ partial class OverviewWindow : OsWindow
         GameLocation loc = Game1.currentLocation;
         Farmer farmer = Game1.player;
         Point tile = row.GetTile();
+        if (row.Transition is { } transition)
+            return InteractProbe.TryResolveTransition(loc, farmer, transition);
         return InteractProbe.TryResolve(loc, farmer, tile, includeInRange: true);
     }
 

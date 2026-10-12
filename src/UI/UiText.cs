@@ -7,6 +7,10 @@ namespace AgrariaOS.UI;
 
 internal static class UiText
 {
+    // Match DrawCell's padding and its reserved shadow/divider pixel.
+    internal static int CellWidth(string text, float scale, int padding = 4)
+        => (int)MathF.Ceiling(Game1.smallFont.MeasureString(text).X * scale) + padding * 2 + 1;
+
     internal static void DrawCell(SpriteBatch batch, string text, Rectangle cell, Color color, ModConfig config,
         bool rightAligned = false, int padding = 4)
     {

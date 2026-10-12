@@ -47,6 +47,7 @@ internal sealed partial class WindowManager
         NotificationsWindow.WindowId,
         ChatWindow.WindowId,
         NotesWindow.WindowId,
+        OptionsWindow.WindowId,
     };
     private readonly List<OsWindow> drawnWindows = new();
     private readonly ContextMenu contextMenu = new();
@@ -94,6 +95,7 @@ internal sealed partial class WindowManager
 
     internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(config, saveConfig, lookupAnything, getMovement, FocusWorld));
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
+    internal void OpenOptions() => Open(OptionsWindow.WindowId, () => new OptionsWindow());
     internal void OpenJournal()
     {
         Open(JournalWindow.WindowId, () => new JournalWindow());
@@ -209,6 +211,37 @@ internal sealed partial class WindowManager
     }
 
     internal bool IsMinimized(string id) => windows.Any(window => window.Id == id && window.IsMinimized);
+
+    internal bool TryMinimize(string id)
+    {
+        OsWindow? window = windows.FirstOrDefault(window => window.Id == id && window.IsValid && !window.IsMinimized);
+        if (window == null)
+            return false;
+        MinimizeWindow(window);
+        return true;
+    }
+
+    private void MinimizeWindow(OsWindow window)
+    {
+        CancelPendingTransfer();
+        EndDrag();
+        contextMenu.Close();
+        ClearKeyboardFocus();
+        if (FindGroup(window) is { } group)
+        {
+            RememberGroupPlacement(group);
+            foreach (OsWindow member in group.Tabs)
+                member.IsMinimized = true;
+        }
+        else
+        {
+            RememberPlacement(window);
+            window.IsMinimized = true;
+        }
+        focusedWindow = GetFrontmostActive();
+        RememberOpenWindows();
+        RememberTabGroups();
+    }
 
 
 

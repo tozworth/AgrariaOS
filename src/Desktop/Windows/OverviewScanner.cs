@@ -233,8 +233,16 @@ partial class OverviewWindow : OsWindow
         }
         catch { }
 
+        IReadOnlyList<MapTransition> transitions = MapTransitions.Scan(loc);
+        foreach (MapTransition transition in transitions)
+            list.Add(OverviewRow.ForTransition(loc, transition, farmerTile));
+        HashSet<Point> transitionTiles = transitions.SelectMany(transition => transition.Tiles).ToHashSet();
         foreach (StaticTile tile in staticTiles)
-            list.Add(OverviewRow.ForStaticTile(loc, tile, farmerTile));
+        {
+            if (!transitionTiles.Contains(tile.Tile) && (tile.Kind != StaticKind.Action
+                || loc.doesTileHaveProperty(tile.Tile.X, tile.Tile.Y, "Action", "Buildings") == tile.Action))
+                list.Add(OverviewRow.ForStaticTile(loc, tile, farmerTile));
+        }
 
         list.AddRange(ScanDynamicTiles(loc, farmerTile));
 

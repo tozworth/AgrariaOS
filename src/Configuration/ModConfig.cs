@@ -36,12 +36,20 @@ public sealed class ModConfig
     public bool Use24HourClock { get; set; }
     public bool ShowLocation { get; set; } = true;
     public bool ShowSecurity { get; set; } = true;
+    public bool ShowTime { get; set; } = true;
+    public bool ShowDate { get; set; } = true;
+    public bool ShowDayPhase { get; set; } = true;
     public bool ShowWeather { get; set; } = true;
+    public bool ShowMoney { get; set; } = true;
+    public bool ShowJournal { get; set; } = true;
+    public bool ShowZoomControls { get; set; } = true;
     public bool ShowChatTimestamps { get; set; } = true;
     public Dictionary<long, PelicomEdge> PelicomPositions { get; set; } = new();
     // Pelicom icon order (entry ids, top-to-bottom or left-to-right), per farmer.
-    // The last two ids are shown anchored to the far end of the strip.
     public Dictionary<long, List<string>> PelicomOrder { get; set; } = new();
+    // Membership of the bottom/right group; an empty list means no end icons.
+    // Missing farmers retain the legacy last-two grouping until their first drag.
+    public Dictionary<long, List<string>> PelicomEndEntries { get; set; } = new();
     // Farmer IDs survive reloads and split-screen reconnects; screen IDs don't.
     public Dictionary<long, Dictionary<string, WindowPlacement>> WindowLayouts { get; set; } = new();
     // Open windows (back-to-front) with minimized flags, per farmer. Chest and lookup windows are transient.
@@ -67,6 +75,15 @@ public sealed class ModConfig
             if (!Enum.IsDefined(typeof(PelicomEdge), PelicomPositions[farmerId]))
                 PelicomPositions.Remove(farmerId);
         PelicomOrder ??= new();
+        PelicomEndEntries ??= new();
+        foreach (long farmerId in PelicomEndEntries.Keys.ToArray())
+        {
+            if (PelicomEndEntries[farmerId] is not { } entries)
+                PelicomEndEntries.Remove(farmerId);
+            else
+                PelicomEndEntries[farmerId] = entries.Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.Ordinal).ToList();
+        }
         foreach (long farmerId in PelicomOrder.Keys.ToArray())
         {
             List<string>? order = PelicomOrder[farmerId];

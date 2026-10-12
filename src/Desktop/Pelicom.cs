@@ -13,7 +13,7 @@ internal sealed partial class Pelicom : IClickableMenu
     internal const int StripWidth = 35;
     private const int SlotHeight = 35;
     private const int TopPadding = 8;
-    private const int BottomEntryCount = 2;
+    private const int DefaultEndEntryCount = 2;
     private const int IconSize = 9;
     private const int IconScale = 3;
     private const int OverviewEntryIndex = 0;
@@ -28,7 +28,8 @@ internal sealed partial class Pelicom : IClickableMenu
     private const int ChatEntryIndex = 9;
     private const int NotesEntryIndex = 10;
     private const int NotificationsEntryIndex = 11;
-    private const int ExitEntryIndex = 12;
+    private const int OptionsEntryIndex = 12;
+    private const int ExitEntryIndex = 13;
     private static readonly (string Id, int Emoji, string Label)[] Entries =
     {
         ("overview", 107, "Overview"),
@@ -43,6 +44,7 @@ internal sealed partial class Pelicom : IClickableMenu
         ("chat", UiStyle.ChatIcon, "Chat"),
         ("notes", 139, "Notes"),
         ("notifications", UiStyle.NotificationIcon, "Notifications"),
+        ("options", UiStyle.OptionsIcon, "Options"),
         ("exit", 131, "Exit")
     };
     private static readonly Dictionary<string, int> EntryIndexById = Entries
@@ -81,8 +83,11 @@ internal sealed partial class Pelicom : IClickableMenu
     private readonly Func<bool> isWalletMinimized;
     private readonly Action openOverview;
     private readonly Func<bool> isOverviewMinimized;
+    private readonly Action openOptions;
+    private readonly Func<bool> isOptionsMinimized;
     private bool autoHideChecked;
     private readonly Action saveConfig;
+    private readonly Func<string, bool> minimizeOpenWindow;
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
     // Press-to-reorder state. The press suppresses the world click; release without
@@ -93,6 +98,8 @@ internal sealed partial class Pelicom : IClickableMenu
     private bool dragging;
     // Insertion index within the visible order excluding the dragged entry.
     private int? dropPosition;
+    private bool dropInEndGroup;
+    private int drawnEndStart;
     // The strip draws inside Game1.drawHUD via onScreenMenus, so its hover tip would sit
     // below desktop windows drawn later in RenderedHud. Remember the tip and replay it
     // above windows through DrawTooltip.
@@ -109,7 +116,8 @@ internal sealed partial class Pelicom : IClickableMenu
         Action openMiningLedger, Func<bool> isMiningLedgerMinimized,
         Action openBundles, Func<bool> isBundlesMinimized, Func<bool> isBundlesAvailable,
         Action openWallet, Func<bool> isWalletMinimized,
-        Action openOverview, Func<bool> isOverviewMinimized, Action saveConfig)
+        Action openOverview, Func<bool> isOverviewMinimized,
+        Action openOptions, Func<bool> isOptionsMinimized, Action saveConfig, Func<string, bool> minimizeOpenWindow)
     {
         this.config = config;
         this.isEnabled = isEnabled;
@@ -142,7 +150,10 @@ internal sealed partial class Pelicom : IClickableMenu
         this.isWalletMinimized = isWalletMinimized;
         this.openOverview = openOverview;
         this.isOverviewMinimized = isOverviewMinimized;
+        this.openOptions = openOptions;
+        this.isOptionsMinimized = isOptionsMinimized;
         this.saveConfig = saveConfig;
+        this.minimizeOpenWindow = minimizeOpenWindow;
     }
 
     internal bool IsVisible => isEnabled() && Game1.IsHudDrawn && !Game1.eventUp && Game1.farmEvent == null

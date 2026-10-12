@@ -56,10 +56,10 @@ partial class ClickToMove
         farmer = who;
         location = here;
         day = Game1.stats.DaysPlayed;
-        warpDestination = null;
-        destination = clicked;
-        // Stored interactions don't cross map-edge warps; their callbacks perform
-        // the selected native action on arrival, including single livestock tool uses.
+        warpDestination = request.WarpDestination;
+        destination = request.WalkDestination ?? clicked;
+        // Walking exits use the ordinary movement trigger; clickable entrances
+        // retain the selected native action on arrival.
         target = request.Move;
         interactTile = request.Tile;
         interactValid = request.Valid;

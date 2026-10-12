@@ -121,8 +121,8 @@ partial class ClickToMove
                 farmer = who;
                 location = here;
                 day = Game1.stats.DaysPlayed;
-                warpDestination = null;
-                destination = step.Clicked;
+                warpDestination = step.Request.WarpDestination;
+                destination = step.Request.WalkDestination ?? step.Clicked;
                 target = step.Request.Move;
                 interactTile = step.Request.Tile;
                 interactValid = step.Request.Valid;
@@ -252,7 +252,9 @@ partial class ClickToMove
         bool Walk(Point tile)
         {
             if (!walkable.TryGetValue(tile, out bool allowed))
-                walkable[tile] = allowed = CanWalkFor(here, who, tile);
+                walkable[tile] = allowed = ((batch.Any(request => request.WarpDestination == tile)
+                    || pending.Any(step => step.Request?.WarpDestination == tile))
+                    && WarpDestination.Resolve(here, who, tile) == tile) || CanWalkFor(here, who, tile);
             return allowed;
         }
         Point start = controller != null || arrived ? routeEnd : who.TilePoint;
@@ -261,7 +263,8 @@ partial class ClickToMove
             if (step.Location != here || step.Day != Game1.stats.DaysPlayed
                 || step.Target?.IsValid() == false || step.Request?.Valid() == false)
                 continue;
-            Point[] goals = step.Target?.InteractTiles().ToArray() ?? new[] { step.Clicked };
+            Point[] goals = step.Target?.InteractTiles().ToArray()
+                ?? new[] { step.Request?.WalkDestination ?? step.Clicked };
             if (step.PlannedTile is { } preferred && goals.Contains(preferred) && (preferred == start || Walk(preferred)))
                 goals = new[] { preferred };
             Stack<Point>? path = TilePathfinder.Find(start, goals.Where(tile => tile == start || Walk(tile)).ToArray(), Walk);
@@ -270,11 +273,11 @@ partial class ClickToMove
         }
         var targets = batch.Select(request =>
         {
-            IEnumerable<Point> tiles = request.Move?.InteractTiles() ?? new[] { request.Tile() };
+            IEnumerable<Point> tiles = request.Move?.InteractTiles() ?? new[] { request.WalkDestination ?? request.Tile() };
             Point hit = request.Tile();
             // Already standing inside an animal's footprint is also a valid zero-cost
             // interaction. Normal paths still use the walkable perimeter.
-            if (Math.Abs(start.X - hit.X) <= 1 && Math.Abs(start.Y - hit.Y) <= 1)
+            if (request.WalkDestination == null && Math.Abs(start.X - hit.X) <= 1 && Math.Abs(start.Y - hit.Y) <= 1)
                 tiles = tiles.Append(start);
             return (IReadOnlyCollection<Point>)tiles.Distinct().ToArray();
         }).ToArray();

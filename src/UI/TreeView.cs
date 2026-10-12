@@ -104,6 +104,21 @@ internal sealed class TreeView
 
     internal bool IsExpanded(TreeNode node) => !collapsed.Contains(node.Id);
 
+    internal int GetPreferredWidth(float scale)
+    {
+        int width = 0;
+        var stack = new Stack<(TreeNode Node, int Depth)>(roots.Select(node => (node, 0)));
+        while (stack.Count > 0)
+        {
+            (TreeNode node, int depth) = stack.Pop();
+            int inset = depth * Indent + (node.Children.Count > 0 ? ChevronWidth : 0);
+            width = Math.Max(width, inset + UiText.CellWidth(node.Label, scale));
+            foreach (TreeNode child in node.Children)
+                stack.Push((child, depth + 1));
+        }
+        return width + Padding * 2 + ScrollbarWidth;
+    }
+
     internal bool Layout(Rectangle bounds, int rowHeight)
     {
         if (rowHeight <= 0)

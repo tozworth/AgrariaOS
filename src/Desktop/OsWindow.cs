@@ -25,6 +25,7 @@ internal abstract class OsWindow
     internal abstract string Id { get; }
     internal abstract string Title { get; }
     internal virtual string TitleSubtext => "";
+    internal virtual IReadOnlyList<WindowTitlebarAction> TitlebarActions => Array.Empty<WindowTitlebarAction>();
     internal abstract int Icon { get; }
     internal virtual bool IsValid => true;
     internal virtual bool CanResize => true;
@@ -37,6 +38,10 @@ internal abstract class OsWindow
     internal Rectangle TitleBounds => new(Bounds.X, Bounds.Y, Bounds.Width, TitleHeight);
     internal Rectangle CloseBounds => new(Bounds.Right - TitleHeight - 1, Bounds.Y + 1, TitleHeight, TitleHeight - 1);
     internal Rectangle MinimizeBounds => new(CloseBounds.X - TitleHeight, CloseBounds.Y, TitleHeight, CloseBounds.Height);
+    // Keep the leading window icon visible even in a very narrow viewport.
+    private int VisibleTitlebarActionCount => TitleHeight <= 0 ? 0
+        : Math.Min(TitlebarActions.Count, Math.Max(0, (MinimizeBounds.X - Bounds.X - 30) / TitleHeight));
+    internal int TitlebarActionsLeft => MinimizeBounds.X - VisibleTitlebarActionCount * TitleHeight;
     internal WindowResizeEdges ActiveResizeEdges { get; set; }
     private Point? position;
     private Point? size;
@@ -114,7 +119,8 @@ internal abstract class OsWindow
 
     internal WindowResizeEdges GetResizeEdges(Point cursor)
     {
-        if (!CanResize || !Bounds.Contains(cursor) || CloseBounds.Contains(cursor) || MinimizeBounds.Contains(cursor))
+        if (!CanResize || !Bounds.Contains(cursor) || CloseBounds.Contains(cursor) || MinimizeBounds.Contains(cursor)
+            || GetTitlebarActionAt(cursor) != null)
             return WindowResizeEdges.None;
         if (cursor.X >= Bounds.Right - ResizeGrip && cursor.Y >= Bounds.Bottom - ResizeGrip)
             return WindowResizeEdges.Right | WindowResizeEdges.Bottom;
@@ -157,13 +163,45 @@ internal abstract class OsWindow
     internal virtual void EndContentDrag() { }
     internal virtual void ReceiveScroll(int delta) { }
     internal virtual IKeyboardSubscriber? KeyboardSubscriber => null;
+    internal virtual bool WantsKeyboardFocus => KeyboardSubscriber?.Selected == true;
+    internal virtual void ReleaseKeyboardFocus()
+    {
+        if (KeyboardSubscriber is { } subscriber)
+            subscriber.Selected = false;
+    }
     internal virtual bool IsTextFieldAt(Point cursor) => false;
     internal virtual void ReceiveKey(Keys key) { }
     internal virtual bool ReceiveShortcut(StardewModdingAPI.SButton button) => false;
     internal virtual void Update() { }
     internal virtual void Close() { }
 
-    internal void Draw(SpriteBatch batch, ModConfig config, Point cursor)
+    private Rectangle GetTitlebarActionBounds(int index)
+        => new(TitlebarActionsLeft + index * TitleHeight, MinimizeBounds.Y, TitleHeight, MinimizeBounds.Height);
+
+    internal WindowTitlebarAction? GetTitlebarActionAt(Point cursor)
+    {
+        for (int i = 0; i < VisibleTitlebarActionCount; i++)
+        {
+            if (GetTitlebarActionBounds(i).Contains(cursor))
+                return TitlebarActions[i];
+        }
+        return null;
+    }
+
+    internal void DrawTitlebarActions(SpriteBatch batch, ModConfig config, Point cursor)
+    {
+        for (int i = 0; i < VisibleTitlebarActionCount; i++)
+        {
+            WindowTitlebarAction action = TitlebarActions[i];
+            Rectangle bounds = GetTitlebarActionBounds(i);
+            bool enabled = action.IsEnabled;
+            if (enabled && bounds.Contains(cursor))
+                batch.Draw(Game1.staminaRect, bounds, UiStyle.Border * config.Opacity);
+            action.DrawIcon(batch, bounds, (enabled ? UiStyle.Primary : UiStyle.Muted) * config.Opacity);
+        }
+    }
+
+    internal void Draw(SpriteBatch batch, ModConfig config, Point cursor, bool isDockPreview = false)
     {
         Rectangle background = DrawContentBackground ? Bounds : new Rectangle(Bounds.X, Bounds.Y, Bounds.Width, TitleHeight + 1);
         batch.Draw(Game1.staminaRect, background, UiStyle.Background * config.Opacity);
@@ -171,10 +209,15 @@ internal abstract class OsWindow
         batch.Draw(Game1.staminaRect, new Rectangle(Bounds.X + 1, Bounds.Y + TitleHeight, Bounds.Width - 2, 1),
             UiStyle.Border * config.Opacity);
 
+        if (isDockPreview)
+            batch.Draw(Game1.staminaRect, new Rectangle(Bounds.X + 1, Bounds.Y + 1,
+                Math.Max(0, TitlebarActionsLeft - Bounds.X - 1), TitleHeight - 1), UiStyle.DockHighlight * config.Opacity);
+
         const int iconSize = 18;
         DrawTitleIcon(batch, new Point(Bounds.X + 6, Bounds.Y + (TitleHeight - iconSize) / 2), config);
-        Rectangle titleTextBounds = new(Bounds.X + 30, Bounds.Y, Math.Max(0, MinimizeBounds.X - Bounds.X - 36), TitleHeight);
+        Rectangle titleTextBounds = new(Bounds.X + 30, Bounds.Y, Math.Max(0, TitlebarActionsLeft - Bounds.X - 36), TitleHeight);
         DrawTitle(batch, titleTextBounds, config);
+        DrawTitlebarActions(batch, config, cursor);
         DrawButton(batch, MinimizeBounds, cursor, config, close: false);
         DrawButton(batch, CloseBounds, cursor, config, close: true);
         DrawContent(batch, new Rectangle(Bounds.X + 1, Bounds.Y + TitleHeight + 1,

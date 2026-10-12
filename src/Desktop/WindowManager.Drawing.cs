@@ -67,9 +67,15 @@ partial class WindowManager
                     frames.Add((windows.IndexOf(window), window));
             }
             frames.Sort((a, b) => a.Index.CompareTo(b.Index));
+            object? dockTarget = CanReceiveInput && (draggedWindow != null || draggedGroup != null)
+                ? FindDropTarget(cursor, draggedWindow, draggedGroup)
+                : null;
             var drawnGroups = new HashSet<WindowTabGroup>();
             foreach (var frame in frames)
             {
+                // Highlight the source too, since its title can cover the destination while dragging.
+                bool isDockPreview = dockTarget != null && (ReferenceEquals(frame.Frame, dockTarget)
+                    || ReferenceEquals(frame.Frame, draggedWindow) || ReferenceEquals(frame.Frame, draggedGroup));
                 if (frame.Frame is WindowTabGroup group)
                 {
                     if (!drawnGroups.Add(group) || group.Tabs.Count < 2)
@@ -78,7 +84,7 @@ partial class WindowManager
                         continue;
                     if (group.Layout(workArea, titleHeight, config))
                     {
-                        group.Draw(batch, config, cursor);
+                        group.Draw(batch, config, cursor, isDockPreview);
                         if (group.Active.IsValid && !group.Active.IsMinimized && windows.Contains(group.Active))
                             drawnWindows.Add(group.Active);
                     }
@@ -87,7 +93,7 @@ partial class WindowManager
                 {
                     if (window.IsValid && !window.IsMinimized && window.Layout(workArea, titleHeight, config))
                     {
-                        window.Draw(batch, config, cursor);
+                        window.Draw(batch, config, cursor, isDockPreview);
                         drawnWindows.Add(window);
                     }
                 }

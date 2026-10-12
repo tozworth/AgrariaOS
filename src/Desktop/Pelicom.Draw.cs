@@ -67,13 +67,14 @@ partial class Pelicom : IClickableMenu
         int mouseX = Game1.getMouseX(ui_scale: true);
         int mouseY = Game1.getMouseY(ui_scale: true);
         int hovered = -1;
-        List<int> order = GetDisplayOrder();
+        List<int> order = GetDisplayOrder(out int bottomCount);
         int visibleCount = order.Count;
-        int bottomCount = Math.Min(BottomEntryCount, visibleCount);
         int topCount = visibleCount - bottomCount;
         int length = horizontal ? strip.Width : strip.Height;
         int endGroup = length - TopPadding - bottomCount * SlotHeight;
-        int separator = endGroup - TopPadding;
+        int separator = bottomCount > 0 ? endGroup - TopPadding : length;
+        // Keep an end drop target even after its last icon is moved out.
+        drawnEndStart = bottomCount > 0 ? separator : length - TopPadding - SlotHeight;
         string clock = horizontal ? StatusReadoutRenderer.FormatTime(Game1.timeOfDay, config.Use24HourClock) : "";
         Vector2 clockSize = Game1.smallFont.MeasureString(clock);
         int clockWidth = horizontal ? (int)MathF.Ceiling(clockSize.X) + TopPadding * 2 : 0;
@@ -89,13 +90,17 @@ partial class Pelicom : IClickableMenu
             _ => new Rectangle(strip.X, strip.Y, strip.Width, 1)
         };
         batch.Draw(Game1.staminaRect, border, UiStyle.Border * config.Opacity);
-        if (separator >= 0)
+        if (bottomCount > 0 && separator >= 0)
             batch.Draw(Game1.staminaRect, horizontal
                 ? new Rectangle(separator, strip.Y + 4, 1, StripWidth - 8)
                 : new Rectangle(strip.X + 4, separator, StripWidth - 8, 1), UiStyle.Border * config.Opacity);
+        Rectangle clockBounds = Rectangle.Empty;
         if (horizontal && startLimit >= TopPadding && clockSize.Y + 1 <= strip.Height)
+        {
             UiText.Draw(batch, clock, new Vector2(separator - TopPadding - clockSize.X,
                 strip.Y + (strip.Height - clockSize.Y) / 2), UiStyle.Primary, config, scale: 1f);
+            clockBounds = new Rectangle(separator - clockWidth, strip.Y, clockWidth, strip.Height - 1);
+        }
         bool isDraggingRail = dragging && pressedEntry.HasValue;
         int topOffset = TopPadding;
         for (int pos = 0; pos < order.Count; pos++)
@@ -145,7 +150,8 @@ partial class Pelicom : IClickableMenu
                 || (i == WalletEntryIndex && isWalletMinimized())
                 || (i == NotificationsEntryIndex && isNotificationsMinimized())
                 || (i == ChatEntryIndex && isChatMinimized())
-                || (i == NotesEntryIndex && isNotesMinimized()))
+                || (i == NotesEntryIndex && isNotesMinimized())
+                || (i == OptionsEntryIndex && isOptionsMinimized()))
                 batch.Draw(Game1.staminaRect, horizontal ? new Rectangle(slot.X + 8,
                     edge == PelicomEdge.Top ? slot.Bottom - 2 : slot.Y + 1, SlotHeight - 16, 1)
                     : new Rectangle(edge == PelicomEdge.Left ? slot.X + 1 : slot.Right - 2, slot.Y + 8, 1, SlotHeight - 16),
@@ -163,6 +169,8 @@ partial class Pelicom : IClickableMenu
         if (isDraggingRail)
             DrawDragFeedback(batch, strip, horizontal, mouseX, mouseY);
 
+        string? tooltipLabel = null;
+        Rectangle tooltipTarget = Rectangle.Empty;
         if (hovered >= 0 && !isDraggingRail)
         {
             string label = Entries[hovered].Label;
@@ -179,20 +187,30 @@ partial class Pelicom : IClickableMenu
             }
             if (hovered == NotificationsEntryIndex && unreadNotifications() > 0)
                 label += $" ({unreadNotifications()} unread)";
-            Vector2 size = Game1.smallFont.MeasureString(label) * config.FontScale;
-            Rectangle hoveredSlot = drawnSlots[hovered];
+            tooltipLabel = label;
+            tooltipTarget = drawnSlots[hovered];
+        }
+        else if (IsInteractive && !isDraggingRail && clockBounds.Contains(mouseX, mouseY))
+        {
+            // The date remains available here even when hidden in the status readout.
+            tooltipLabel = StatusReadoutRenderer.FormatDate(Game1.dayOfMonth, Game1.currentSeason, Game1.year);
+            tooltipTarget = clockBounds;
+        }
+        if (tooltipLabel != null)
+        {
+            Vector2 size = Game1.smallFont.MeasureString(tooltipLabel) * config.FontScale;
             int width = Math.Min(Game1.uiViewport.Width, (int)MathF.Ceiling(size.X) + 12);
             int height = Math.Min(Game1.uiViewport.Height, (int)MathF.Ceiling(size.Y) + 4);
             int x = edge == PelicomEdge.Right ? strip.Left - width - 4
-                : horizontal ? hoveredSlot.X : strip.Right + 4;
+                : horizontal ? tooltipTarget.X : strip.Right + 4;
             int y = edge == PelicomEdge.Top ? strip.Bottom + 4
                 : edge == PelicomEdge.Bottom ? strip.Top - height - 4
-                : hoveredSlot.Y + (SlotHeight - height) / 2;
+                : tooltipTarget.Y + (SlotHeight - height) / 2;
             Rectangle tooltip = new(Math.Clamp(x, 0, Math.Max(0, Game1.uiViewport.Width - width)),
                 Math.Clamp(y, 0, Math.Max(0, Game1.uiViewport.Height - height)), width, height);
             pendingTooltip = tooltip;
-            pendingTooltipLabel = label;
-            DrawTooltipRect(batch, tooltip, label);
+            pendingTooltipLabel = tooltipLabel;
+            DrawTooltipRect(batch, tooltip, tooltipLabel);
         }
 
         drawnBounds = strip;
@@ -204,12 +222,17 @@ partial class Pelicom : IClickableMenu
             return;
         int dragged = pressedEntry.Value;
         // Insertion indicator within the order excluding the dragged entry.
-        List<int> remaining = GetDisplayOrder();
+        List<int> remaining = GetDisplayOrder(out int endCount);
+        int split = remaining.Count - endCount;
+        if (remaining.IndexOf(dragged) < split)
+            split--;
         remaining.Remove(dragged);
         int insertAt = Math.Clamp(dropPosition ?? remaining.Count, 0, remaining.Count);
+        int groupStart = dropInEndGroup ? split : 0;
+        int groupEnd = dropInEndGroup ? remaining.Count : split;
         Rectangle? prevSlot = null;
         Rectangle? nextSlot = null;
-        for (int pos = insertAt - 1; pos >= 0; pos--)
+        for (int pos = insertAt - 1; pos >= groupStart; pos--)
         {
             Rectangle slot = drawnSlots[remaining[pos]];
             if (slot.IsEmpty)
@@ -217,7 +240,7 @@ partial class Pelicom : IClickableMenu
             prevSlot = slot;
             break;
         }
-        for (int pos = insertAt; pos < remaining.Count; pos++)
+        for (int pos = insertAt; pos < groupEnd; pos++)
         {
             Rectangle slot = drawnSlots[remaining[pos]];
             if (slot.IsEmpty)
@@ -250,6 +273,16 @@ partial class Pelicom : IClickableMenu
                     y = nextSlot!.Value.Top;
                 indicator = new Rectangle(strip.X + 4, y - 1, StripWidth - 8, 2);
             }
+            batch.Draw(Game1.staminaRect, indicator, UiStyle.Primary * config.Opacity);
+        }
+        else
+        {
+            int axis = dropInEndGroup
+                ? (horizontal ? strip.Width : strip.Height) - TopPadding - SlotHeight
+                : TopPadding;
+            Rectangle indicator = horizontal
+                ? new Rectangle(axis - 1, strip.Y + 4, 2, StripWidth - 8)
+                : new Rectangle(strip.X + 4, axis - 1, StripWidth - 8, 2);
             batch.Draw(Game1.staminaRect, indicator, UiStyle.Primary * config.Opacity);
         }
         // Ghost icon follows the cursor.

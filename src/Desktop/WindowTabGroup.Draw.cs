@@ -8,7 +8,7 @@ namespace AgrariaOS.Desktop;
 
 partial class WindowTabGroup
 {
-    internal void Draw(SpriteBatch batch, ModConfig config, Point cursor)
+    internal void Draw(SpriteBatch batch, ModConfig config, Point cursor, bool isDockPreview = false)
     {
         drawnTabs.Clear();
         if (Bounds.IsEmpty || Tabs.Count == 0)
@@ -24,7 +24,7 @@ partial class WindowTabGroup
             UiStyle.Border * config.Opacity);
 
         // Tab strip: equal widths, icon plus title text only.
-        Rectangle strip = new(Bounds.X + 1, Bounds.Y + 1, Math.Max(0, MinimizeBounds.X - Bounds.X - 1), TitleHeight - 1);
+        Rectangle strip = new(Bounds.X + 1, Bounds.Y + 1, Math.Max(0, Active.TitlebarActionsLeft - Bounds.X - 1), TitleHeight - 1);
         int count = Tabs.Count;
         int baseWidth = count == 0 ? 0 : strip.Width / count;
         int remainder = count == 0 ? 0 : strip.Width % count;
@@ -41,7 +41,9 @@ partial class WindowTabGroup
 
             bool isActive = ReferenceEquals(tab, Active);
             bool hovered = tabBounds.Contains(cursor);
-            if (isActive)
+            if (isDockPreview)
+                batch.Draw(Game1.staminaRect, tabBounds, UiStyle.DockHighlight * config.Opacity);
+            else if (isActive)
                 batch.Draw(Game1.staminaRect, tabBounds, UiStyle.Border * config.Opacity);
             else if (hovered)
                 batch.Draw(Game1.staminaRect, tabBounds, UiStyle.Border * (config.Opacity * 0.45f));
@@ -63,13 +65,14 @@ partial class WindowTabGroup
                 Vector2 size = Game1.smallFont.MeasureString(title) * config.FontScale;
                 if (!string.IsNullOrEmpty(title) && size.Y + 1 <= textBounds.Height)
                 {
-                    Color color = isActive ? UiStyle.Primary : UiStyle.Muted;
+                    Color color = isActive || isDockPreview ? UiStyle.Primary : UiStyle.Muted;
                     UiText.Draw(batch, title, new Vector2(textBounds.X,
                         textBounds.Y + (textBounds.Height - size.Y) / 2), color, config);
                 }
             }
         }
 
+        Active.DrawTitlebarActions(batch, config, cursor);
         DrawButton(batch, MinimizeBounds, cursor, config, close: false);
         DrawButton(batch, CloseBounds, cursor, config, close: true);
 

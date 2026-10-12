@@ -1,4 +1,5 @@
 using AgrariaOS.Configuration;
+using AgrariaOS.Desktop.Windows;
 using AgrariaOS.Hud;
 using AgrariaOS.UI;
 using Microsoft.Xna.Framework;
@@ -46,6 +47,25 @@ partial class Pelicom : IClickableMenu
     {
         if (!IsInteractive)
             return;
+        string? windowId = entry switch
+        {
+            OverviewEntryIndex => OverviewWindow.WindowId,
+            MailEntryIndex => MailWindow.WindowId,
+            JournalEntryIndex => JournalWindow.WindowId,
+            InventoryEntryIndex => InventoryWindow.WindowId,
+            LivestockEntryIndex => LivestockWindow.WindowId,
+            SocialEntryIndex => SocialWindow.WindowId,
+            MiningEntryIndex => MiningLedgerWindow.WindowId,
+            BundlesEntryIndex => BundlesWindow.WindowId,
+            WalletEntryIndex => WalletWindow.WindowId,
+            NotificationsEntryIndex => NotificationsWindow.WindowId,
+            ChatEntryIndex => ChatWindow.WindowId,
+            NotesEntryIndex => NotesWindow.WindowId,
+            OptionsEntryIndex => OptionsWindow.WindowId,
+            _ => null
+        };
+        if (windowId != null && minimizeOpenWindow(windowId))
+            return;
         if (entry == OverviewEntryIndex)
             openOverview();
         else if (entry == MailEntryIndex)
@@ -70,6 +90,8 @@ partial class Pelicom : IClickableMenu
             openChat();
         else if (entry == NotesEntryIndex)
             openNotes();
+        else if (entry == OptionsEntryIndex)
+            openOptions();
         else if (entry == ExitEntryIndex)
             // Terminate immediately without entering the game's save or shutdown flow.
             Environment.Exit(0);
@@ -114,6 +136,7 @@ partial class Pelicom : IClickableMenu
             int? entry = pressedEntry;
             bool wasDragging = dragging;
             int? drop = dropPosition;
+            bool intoEndGroup = dropInEndGroup;
             pressedOnStrip = false;
             pressedEntry = null;
             dragging = false;
@@ -121,7 +144,7 @@ partial class Pelicom : IClickableMenu
             if (wasDragging)
             {
                 if (entry.HasValue && drop.HasValue)
-                    CommitReorder(entry.Value, drop.Value);
+                    CommitReorder(entry.Value, drop.Value, intoEndGroup);
             }
             else if (entry.HasValue)
                 ActivateEntry(entry.Value);
@@ -155,18 +178,19 @@ partial class Pelicom : IClickableMenu
             return;
         }
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-        List<int> order = GetDisplayOrder();
+        List<int> order = GetDisplayOrder(out int endCount);
+        int split = order.Count - endCount;
+        if (order.IndexOf(pressedEntry.Value) < split)
+            split--;
         order.Remove(pressedEntry.Value);
-        if (order.Count == 0)
-        {
-            dropPosition = 0;
-            return;
-        }
         bool horizontal;
         try { horizontal = GetPosition(config) is PelicomEdge.Top or PelicomEdge.Bottom; }
         catch { horizontal = false; }
         int cursorAxis = horizontal ? cursor.X : cursor.Y;
-        for (int pos = 0; pos < order.Count; pos++)
+        dropInEndGroup = cursorAxis >= drawnEndStart;
+        int groupStart = dropInEndGroup ? split : 0;
+        int groupEnd = dropInEndGroup ? order.Count : split;
+        for (int pos = groupStart; pos < groupEnd; pos++)
         {
             Rectangle slot = drawnSlots[order[pos]];
             if (slot.IsEmpty)
@@ -178,6 +202,6 @@ partial class Pelicom : IClickableMenu
                 return;
             }
         }
-        dropPosition = order.Count;
+        dropPosition = groupEnd;
     }
 }

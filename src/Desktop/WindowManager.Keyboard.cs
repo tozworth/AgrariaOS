@@ -105,7 +105,7 @@ partial class WindowManager
         {
             if (keyboardDispatcher?.Subscriber == subscriber)
                 keyboardDispatcher.Subscriber = null;
-            subscriber.Selected = false;
+            keyboardWindow!.ReleaseKeyboardFocus();
         }
         keyboardWindow = null;
         keyboardDispatcher = null;
@@ -116,7 +116,7 @@ partial class WindowManager
         if (keyboardWindow == null)
             return false;
         IKeyboardSubscriber? subscriber = keyboardWindow.KeyboardSubscriber;
-        if (!isVisible() || Game1.IsChatting || keyboardWindow.IsMinimized || keyboardWindow.Bounds.IsEmpty
+        if (subscriber == null || !keyboardWindow.WantsKeyboardFocus || !isVisible() || Game1.IsChatting || keyboardWindow.IsMinimized || keyboardWindow.Bounds.IsEmpty
             || keyboardDispatcher != Game1.keyboardDispatcher
             || !IsFrontmost(keyboardWindow)
             || (Game1.keyboardDispatcher.Subscriber != null && Game1.keyboardDispatcher.Subscriber != subscriber))

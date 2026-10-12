@@ -53,6 +53,18 @@ partial class ModEntry : Mod
                 Helper.Input.Suppress(e.Button);
                 return;
             }
+            if (!Game1.IsChatting && pelicom.Value.IsInteractive && statusReadoutRenderer.Value.Contains(cursor))
+            {
+                if (leftClick)
+                    // Invoke before vanilla hover handling can reposition the clock's controls.
+                    Game1.dayTimeMoneyBox.receiveLeftClick(cursor.X, cursor.Y);
+                else
+                    windowManager.Value.ShowContextMenu(cursor,
+                        statusReadoutRenderer.Value.GetContextMenuItems(config, () => Helper.WriteConfig(config)),
+                        title: "Status readout", isValid: () => UsePelicom && pelicom.Value.IsInteractive);
+                Helper.Input.Suppress(e.Button);
+                return;
+            }
             if (!Game1.IsChatting && pelicom.Value.isWithinBounds(cursor.X, cursor.Y))
             {
                 if (leftClick)

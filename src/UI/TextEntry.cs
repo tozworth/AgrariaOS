@@ -210,10 +210,7 @@ internal sealed class TextEntry : IKeyboardSubscriber
         int lineHeight = UiText.LineHeight(config.FontScale);
         if (bounds.Width < 16 || bounds.Height < lineHeight)
             return;
-        batch.Draw(Game1.staminaRect, bounds, Color.Black * (config.Opacity * 0.2f));
-        UiStyle.DrawBorder(batch, bounds, config.Opacity);
-        if (Selected)
-            batch.Draw(Game1.staminaRect, new Rectangle(bounds.X, bounds.Bottom - 1, bounds.Width, 1), UiStyle.Primary * config.Opacity);
+        FormControls.Field(batch, bounds, config, focused: Selected);
         int width = bounds.Width - Padding * 2;
         string[] lines = text.Split('\n');
         int caretLine = LineIndex(caret);

@@ -54,10 +54,11 @@ partial class WindowManager
             }
             else if (window.MinimizeBounds.Contains(cursor))
             {
-                RememberPlacement(window);
-                window.IsMinimized = true;
-                focusedWindow = GetFrontmostActive();
-                EndDrag();
+                MinimizeWindow(window);
+            }
+            else if (window.GetTitlebarActionAt(cursor) is { } titlebarAction)
+            {
+                titlebarAction.Invoke();
             }
             else if (window.GetResizeEdges(cursor) is var edges && edges != WindowResizeEdges.None)
             {
@@ -74,7 +75,7 @@ partial class WindowManager
             else
             {
                 window.ReceiveContentClick(cursor, leftClick: true);
-                if (window.KeyboardSubscriber?.Selected == true)
+                if (window.WantsKeyboardFocus)
                 {
                     keyboardWindow = window;
                     keyboardDispatcher = Game1.keyboardDispatcher;
@@ -123,8 +124,12 @@ partial class WindowManager
     private bool ReceiveGroupLeftClick(WindowTabGroup group, OsWindow window, Point cursor, IInputHelper input)
     {
         EndDrag();
+        // Resolve actions before switching tabs: selecting a tab must never fire
+        // an action that appears in the newly active window's chrome.
+        WindowTitlebarAction? titlebarAction = group.Active.GetTitlebarActionAt(cursor);
         // The press identifies the frame; tab selection decides the active member.
-        OsWindow? pressedTab = group.GetTabAt(cursor) ?? (group.TitleBounds.Contains(cursor) ? group.Active : null);
+        OsWindow? pressedTab = titlebarAction != null ? null
+            : group.GetTabAt(cursor) ?? (group.TitleBounds.Contains(cursor) ? group.Active : null);
         if (pressedTab != null && !ReferenceEquals(pressedTab, group.Active))
         {
             group.SetActive(pressedTab);
@@ -142,11 +147,11 @@ partial class WindowManager
         }
         else if (group.MinimizeBounds.Contains(cursor))
         {
-            RememberGroupPlacement(group);
-            foreach (OsWindow member in group.Tabs)
-                member.IsMinimized = true;
-            focusedWindow = GetFrontmostActive();
-            EndDrag();
+            MinimizeWindow(group.Active);
+        }
+        else if (titlebarAction != null)
+        {
+            titlebarAction.Invoke();
         }
         else if (group.GetResizeEdges(cursor) is var edges && edges != WindowResizeEdges.None)
         {
@@ -177,7 +182,7 @@ partial class WindowManager
         {
             OsWindow active = group.Active;
             active.ReceiveContentClick(cursor, leftClick: true);
-            if (active.KeyboardSubscriber?.Selected == true)
+            if (active.WantsKeyboardFocus)
             {
                 keyboardWindow = active;
                 keyboardDispatcher = Game1.keyboardDispatcher;

@@ -55,7 +55,8 @@ public sealed partial class ModEntry
         int previousHeight = heightUsed;
         try
         {
-            mod.notificationBubbleRenderer.Value.Draw(b, __instance, ref heightUsed, mod.config);
+            mod.notificationBubbleRenderer.Value.Draw(b, __instance, ref heightUsed, mod.config,
+                mod.pelicom.Value.NotificationBounds);
             return false;
         }
         catch (Exception ex)

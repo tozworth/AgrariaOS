@@ -13,9 +13,9 @@ internal sealed class NotificationsWindow : OsWindow
     private const int Padding = 8;
     private const int ScrollbarWidth = 10;
     private readonly NotificationHistory history;
+    private readonly WindowTitlebarAction[] titlebarActions;
     private readonly List<(NotificationEntry Entry, string Text, Color Color)> lines = new();
     private readonly List<(NotificationEntry Entry, Rectangle Bounds)> dismissButtons = new();
-    private Rectangle clearBounds;
     private Rectangle rowsBounds;
     private Rectangle scrollTrack;
     private Rectangle scrollThumb;
@@ -24,10 +24,15 @@ internal sealed class NotificationsWindow : OsWindow
     private int? scrollDragOffset;
     private (int Count, int RemovalVersion, int Width, float Scale, SpriteFont Font, bool Clock)? layoutKey;
 
-    internal NotificationsWindow(NotificationHistory history) => this.history = history;
+    internal NotificationsWindow(NotificationHistory history)
+    {
+        this.history = history;
+        titlebarActions = new[] { new WindowTitlebarAction(UiStyle.DrawTrashIcon, ClearHistory, () => history.Entries.Count > 0) };
+    }
     internal override string Id => WindowId;
     internal override string Title => "Notifications";
     internal override int Icon => UiStyle.NotificationIcon;
+    internal override IReadOnlyList<WindowTitlebarAction> TitlebarActions => titlebarActions;
     internal override Point DefaultSize => new(580, 420);
     private int MaxFirstLine => Math.Max(0, lines.Count - visibleLines);
 
@@ -72,8 +77,7 @@ internal sealed class NotificationsWindow : OsWindow
         int rowWidth = Math.Max(0, contentBounds.Width - Padding * 2 - ScrollbarWidth);
         int textWidth = Math.Max(0, rowWidth - dismissSize - Padding);
         RefreshLines(textWidth, config);
-        int buttonHeight = lineHeight + 4;
-        int availableHeight = Math.Max(0, contentBounds.Height - Padding * 3 - buttonHeight);
+        int availableHeight = Math.Max(0, contentBounds.Height - Padding * 2);
         visibleLines = availableHeight / lineHeight;
         firstLine = Math.Clamp(firstLine, 0, MaxFirstLine);
         rowsBounds = new Rectangle(contentBounds.X + Padding, contentBounds.Y + Padding, rowWidth, visibleLines * lineHeight);
@@ -101,12 +105,6 @@ internal sealed class NotificationsWindow : OsWindow
             else
                 UiText.Draw(batch, line.Text, new Vector2(rowsBounds.X, y), line.Color, config);
         }
-        int buttonWidth = Math.Min(rowWidth, (int)MathF.Ceiling(Game1.smallFont.MeasureString("Clear").X * config.FontScale) + Padding * 2);
-        clearBounds = new Rectangle(contentBounds.X + Padding, contentBounds.Bottom - Padding - buttonHeight, buttonWidth, buttonHeight);
-        bool canClear = history.Entries.Count > 0;
-        batch.Draw(Game1.staminaRect, clearBounds, UiStyle.Border * (config.Opacity * (canClear && clearBounds.Contains(cursor) ? 1f : 0.45f)));
-        UiStyle.DrawBorder(batch, clearBounds, config.Opacity);
-        DrawCenteredText(batch, "Clear", clearBounds, canClear ? UiStyle.Primary : UiStyle.Muted, config);
         if (visibleLines > 0 && textWidth > 0)
             history.MarkRead();
     }
@@ -137,18 +135,18 @@ internal sealed class NotificationsWindow : OsWindow
         }
     }
 
+    private void ClearHistory()
+    {
+        history.Clear();
+        firstLine = 0;
+        dismissButtons.Clear();
+        EndContentDrag();
+    }
+
     internal override void ReceiveContentClick(Point cursor, bool leftClick)
     {
         if (!leftClick)
             return;
-        if (clearBounds.Contains(cursor))
-        {
-            history.Clear();
-            firstLine = 0;
-            dismissButtons.Clear();
-            EndContentDrag();
-            return;
-        }
         foreach (var button in dismissButtons)
         {
             if (!button.Bounds.Contains(cursor))
