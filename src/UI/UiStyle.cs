@@ -94,6 +94,12 @@ internal static class UiStyle
         batch.Draw(Game1.staminaRect, new Rectangle(bounds.Right - 1, bounds.Y, 1, bounds.Height), color);
     }
 
+    internal static void DrawAddIcon(SpriteBatch batch, Rectangle bounds, Color color)
+    {
+        batch.Draw(Game1.staminaRect, new Rectangle(bounds.Center.X - 4, bounds.Center.Y, 9, 1), color);
+        batch.Draw(Game1.staminaRect, new Rectangle(bounds.Center.X, bounds.Center.Y - 4, 1, 9), color);
+    }
+
     internal static void DrawTrashIcon(SpriteBatch batch, Rectangle bounds, Color color)
     {
         // A 9x9 silhouette, matching the titlebar's whole-pixel close/minimize controls.

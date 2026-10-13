@@ -22,9 +22,10 @@ public sealed partial class ModEntry : Mod
 {
     private static ModEntry Instance = null!;
     private readonly PerScreen<bool> osHudActive = new(() => true);
-    private readonly PerScreen<ClickToMove> clickToMove = new(() => new ClickToMove());
+    private readonly PerScreen<ClickToMove> clickToMove = new(() => new ClickToMove(() => Instance.config.ExtendedQueue));
     private readonly PerScreen<bool> clickToMoveFailed = new(() => false);
     private readonly PerScreen<MachineCollectDrag> machineCollectDrag = new(() => new MachineCollectDrag());
+    private readonly PerScreen<BoxSelectDrag> boxSelectDrag = new(() => new BoxSelectDrag());
     private readonly PerScreen<MachineCollectDrag> rockMiningDrag = new(() => new MachineCollectDrag());
     private readonly PerScreen<MachineCollectDrag> animalHarvestDrag = new(() => new MachineCollectDrag());
     private readonly PerScreen<StatusReadoutRenderer> statusReadoutRenderer = new(() => new StatusReadoutRenderer());
@@ -71,7 +72,7 @@ public sealed partial class ModEntry : Mod
     private readonly PerScreen<WindowManager> windowManager = new(() => new WindowManager(Instance.config,
         () => Instance.pelicom.Value.IsInteractive, Instance.OnWindowDrawFailed,
         () => Instance.Helper.WriteConfig(Instance.config), Instance.OnInventoryTransferFailed, Instance.lookupAnything,
-        () => Instance.clickToMove.Value));
+        () => Instance.clickToMove.Value, edge => Instance.pelicom.Value.SetPosition(edge)));
     private readonly PerScreen<bool> windowsRestored = new(() => false);
     private LookupAnythingIntegration lookupAnything = null!;
     private readonly HardwareCursor hardwareCursor = new();
@@ -113,6 +114,7 @@ public sealed partial class ModEntry : Mod
             windowManager.Value.SuppressKeyboardInput(helper.Input);
             UpdateDesktopPause();
             UpdateMachineCollectDrag();
+            UpdateBoxSelectDrag();
             UpdateRockMiningDrag();
             UpdateAnimalHarvestDrag();
             UpdateClickToMove(beforeUpdate: true);
@@ -120,14 +122,16 @@ public sealed partial class ModEntry : Mod
         helper.Events.Input.MouseWheelScrolled += (_, e) =>
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
-            if (UsePelicom && windowManager.Value.ReceiveScroll(cursor, e.Delta))
+            if (UsePelicom && (pelicom.Value.isWithinBounds(cursor.X, cursor.Y) && !windowManager.Value.IsContextMenuOpen
+                || windowManager.Value.ReceiveScroll(cursor, e.Delta)))
                 helper.Input.SuppressScrollWheel();
         };
-        helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch, batch => pelicom.Value.DrawTooltip(batch));
+        helper.Events.Display.RenderedHud += (_, e) => windowManager.Value.Draw(e.SpriteBatch, batch => pelicom.Value.DrawOverlay(batch));
         helper.Events.Display.RenderedWorld += (_, e) =>
         {
             DrawHoverHighlight(e.SpriteBatch);
             DrawMoveDestination(e.SpriteBatch);
+            DrawBoxSelectDrag(e.SpriteBatch);
         };
         helper.Events.Display.RenderingActiveMenu += (_, e) =>
         {
@@ -167,7 +171,7 @@ public sealed partial class ModEntry : Mod
             }
             RouteDialogue();
             windowManager.Value.Update(helper.Input);
-            try { pelicom.Value.Update(helper.Input); }
+            try { pelicom.Value.Update(helper.Input, windowManager.Value.IsContextMenuOpen); }
             catch { }
             UpdateHardwareCursor();
         };
@@ -178,6 +182,7 @@ public sealed partial class ModEntry : Mod
             clickToMove.ResetAllScreens();
             clickToMoveFailed.ResetAllScreens();
             machineCollectDrag.ResetAllScreens();
+            boxSelectDrag.ResetAllScreens();
             rockMiningDrag.ResetAllScreens();
             animalHarvestDrag.ResetAllScreens();
             animalQueueOutline.Clear();

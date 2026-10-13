@@ -9,12 +9,19 @@ using StardewValley.Menus;
 
 namespace AgrariaOS.Desktop.Windows;
 
-// Vanilla supplies the localized categories, available options and setting actions.
+// System holds Agraria settings; vanilla supplies the remaining localized categories and actions.
 // This window owns presentation and input; it never draws the vanilla OptionsPage.
 internal sealed partial class OptionsWindow : OsWindow
 {
     internal const string WindowId = "Options";
     private const int Padding = 8;
+    private readonly ModConfig config;
+    private readonly Action saveConfig;
+    private readonly Action<PelicomEdge> setPelicomPosition;
+    private static readonly PelicomEdge[] PelicomEdges = Enum.GetValues<PelicomEdge>();
+    private static readonly string[] PelicomEdgeLabels = PelicomEdges.Select(edge => edge.ToString()).ToArray();
+    private static readonly RightClickDragMode[] DragModes = Enum.GetValues<RightClickDragMode>();
+    private static readonly string[] DragModeLabels = { "Per-tile", "Box select" };
     private readonly TreeView tree = new();
     private readonly DropdownList dropdown = new();
     private readonly List<Category> categories = new();
@@ -42,8 +49,13 @@ internal sealed partial class OptionsWindow : OsWindow
     private Category SelectedCategory => categories.First(category => category.Id == tree.SelectedId);
     private int MaxFirstRow => Math.Max(0, SelectedCategory.Options.Count - visibleRows);
 
-    internal OptionsWindow()
-        => RebuildCategories();
+    internal OptionsWindow(ModConfig config, Action saveConfig, Action<PelicomEdge> setPelicomPosition)
+    {
+        this.config = config;
+        this.saveConfig = saveConfig;
+        this.setPelicomPosition = setPelicomPosition;
+        RebuildCategories();
+    }
 
     private static (int, bool, bool, bool, LocalizedContentManager.LanguageCode) GetContext()
         => (Game1.multiplayerMode, Game1.IsMultiplayer, Game1.game1.IsLocalCoopJoinable(),
@@ -60,6 +72,13 @@ internal sealed partial class OptionsWindow : OsWindow
         ReleaseKeyboardFocus();
         binding = null;
         firstRow = 0;
+        var system = new Category("system", "System");
+        system.Options.Add(new SystemOption("Pelicom auto-hide", SystemSetting.AutoHide));
+        system.Options.Add(new SystemOption("Pelicom position", SystemSetting.Position));
+        system.Options.Add(new OptionsElement("Experimental"));
+        system.Options.Add(new SystemOption("Extended queue", SystemSetting.ExtendedQueue));
+        system.Options.Add(new SystemOption("Right-click drag", SystemSetting.RightClickDrag));
+        categories.Add(system);
         // Use vanilla's full-size constructor even when the desktop is resized. Its
         // element geometry is retained only for forwarding discrete button actions.
         vanilla = new OptionsPage(0, 0, 800, 600);
@@ -97,6 +116,16 @@ internal sealed partial class OptionsWindow : OsWindow
     private sealed record Category(string Id, string Label)
     {
         internal List<OptionsElement> Options { get; } = new();
+    }
+
+    private enum SystemSetting { AutoHide, Position, ExtendedQueue, RightClickDrag }
+
+    // These rows share layout and input with vanilla options, but never call its setting APIs.
+    private sealed class SystemOption : OptionsElement
+    {
+        internal SystemSetting Setting { get; }
+        internal SystemOption(string label, SystemSetting setting) : base(label)
+            => Setting = setting;
     }
 
     private sealed record OptionRow(OptionsElement Option, Rectangle Bounds, Rectangle Control,

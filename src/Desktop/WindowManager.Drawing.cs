@@ -39,8 +39,8 @@ partial class WindowManager
             drawnViewport = new Point(Game1.uiViewport.Width, Game1.uiViewport.Height);
             Rectangle workArea = Pelicom.GetWorkArea(config);
             float titleTextHeight = windows.Count == 0 ? Game1.smallFont.LineSpacing
-                : windows.Max(window => Math.Max(Game1.smallFont.MeasureString(window.Title).Y,
-                    Game1.smallFont.MeasureString(window.TitleSubtext).Y));
+                : windows.Max(window => Math.Max(UiText.Measure(window.Title).Y,
+                    UiText.Measure(window.TitleSubtext).Y));
             int titleHeight = Math.Max(27, (int)MathF.Ceiling(titleTextHeight * config.FontScale)) + 6;
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             // Frames back-to-front: ungrouped windows by index, groups by frontmost member.
@@ -125,8 +125,7 @@ partial class WindowManager
                 else if (itemDragSource is TradeWindow dragTrade)
                     dragTrade.DrawItemDrag(batch, cursor, draggedItems, valid, config);
             }
-            // Overlays (e.g. the Pelicom hover tip, drawn earlier below these frames)
-            // replay above windows but below the context menu.
+            // Pelicom overlays windows; context menus remain above the rail.
             overlay?.Invoke(batch);
             contextMenu.Draw(batch, config, cursor);
         }

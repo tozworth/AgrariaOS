@@ -6,18 +6,17 @@ namespace AgrariaOS.Movement;
 internal static class TilePathfinder
 {
     internal static readonly Point[] Directions = { new(0, -1), new(1, 0), new(0, 1), new(-1, 0) };
+    private const int MaxExactRouteTargets = 9;
 
     internal readonly record struct RouteStop(int TargetIndex, Point Tile);
 
-    /// <summary>Shortest open tour through reachable target groups, including the choice
-    /// of interaction side. BFS supplies obstacle-aware distances; subset DP checks every
-    /// order and endpoint combination. Targets and collisions are a snapshot; live legs
-    /// still validate/replan normally. No return to the start is required.</summary>
+    /// <summary>Open tour through reachable target groups, including the choice of
+    /// interaction side. Small batches use BFS distances and exact subset DP; larger
+    /// batches repeatedly select the nearest reachable group with a bounded BFS.
+    /// Targets/collisions are a snapshot; live legs still validate/replan normally.</summary>
     internal static IReadOnlyList<RouteStop> FindRoute(Point start,
         IReadOnlyList<IReadOnlyCollection<Point>> targets, Func<Point, bool> canWalk, int limit = 20000)
     {
-        if (targets.Count > ClickToMove.MaxQueued)
-            throw new ArgumentOutOfRangeException(nameof(targets));
         Dictionary<Point, bool> walkable = new();
         bool Walk(Point tile)
         {
@@ -31,6 +30,10 @@ internal static class TilePathfinder
             .Select(tile => new RouteStop(index, tile))).ToArray();
         if (nodes.Length == 0)
             return Array.Empty<RouteStop>();
+        // Exact subset search grows exponentially. Extended queues need a route
+        // without bit-mask overflow, exponential storage or all-pairs map searches.
+        if (targets.Count > MaxExactRouteTargets)
+            return FindNearestRoute(start, nodes, Walk, limit);
         var destinations = nodes.Select(node => node.Tile).ToHashSet();
         Dictionary<Point, int> Distances(Point origin)
         {
@@ -125,6 +128,50 @@ internal static class TilePathfinder
             bestEnd = previous;
         }
         route.Reverse();
+        return route;
+    }
+
+    private static IReadOnlyList<RouteStop> FindNearestRoute(Point start, RouteStop[] nodes,
+        Func<Point, bool> canWalk, int limit)
+    {
+        var targetsByTile = nodes.GroupBy(node => node.Tile)
+            .ToDictionary(group => group.Key, group => group.Select(node => node.TargetIndex).ToArray());
+        var remaining = nodes.Select(node => node.TargetIndex).ToHashSet();
+        var route = new List<RouteStop>();
+        Point origin = start;
+        while (remaining.Count > 0)
+        {
+            Queue<Point> open = new();
+            HashSet<Point> seen = new() { origin };
+            open.Enqueue(origin);
+            RouteStop? nearest = null;
+            int visited = 0;
+            while (open.TryDequeue(out Point tile) && visited++ < limit)
+            {
+                if (targetsByTile.TryGetValue(tile, out int[]? candidates))
+                {
+                    foreach (int index in candidates)
+                        if (remaining.Contains(index))
+                        {
+                            nearest = new RouteStop(index, tile);
+                            break;
+                        }
+                    if (nearest != null)
+                        break;
+                }
+                foreach (Point direction in Directions)
+                {
+                    Point next = tile + direction;
+                    if (seen.Add(next) && canWalk(next))
+                        open.Enqueue(next);
+                }
+            }
+            if (nearest is not { } stop)
+                break;
+            route.Add(stop);
+            remaining.Remove(stop.TargetIndex);
+            origin = stop.Tile;
+        }
         return route;
     }
 

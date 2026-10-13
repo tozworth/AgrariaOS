@@ -147,7 +147,7 @@ internal sealed partial class OverviewWindow : OsWindow
         lastClickKey = ctrl || shift ? null : key;
         lastClickMs = now;
         RefreshSelection();
-        if (!selection.Click(key, ValidRowKeys(), ctrl, shift))
+        if (!selection.Click(key, ValidRowKeys(), ctrl, shift, config.ExtendedQueue))
             Game1.playSound("cancel");
         if (doubleClick)
         {

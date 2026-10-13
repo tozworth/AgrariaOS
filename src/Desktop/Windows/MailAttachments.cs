@@ -16,7 +16,7 @@ internal sealed partial class MailWindow
     {
         batch.Draw(Game1.staminaRect, new Rectangle(attachmentsBounds.X, attachmentsBounds.Y, attachmentsBounds.Width, 1), UiStyle.Border * config.Opacity);
         const string label = "Attachments";
-        int labelWidth = (int)MathF.Ceiling(Game1.smallFont.MeasureString(label).X * config.FontScale) + Padding * 3;
+        int labelWidth = (int)MathF.Ceiling(UiText.Measure(label).X * config.FontScale) + Padding * 3;
         UiText.DrawCell(batch, label, new Rectangle(attachmentsBounds.X, attachmentsBounds.Y, labelWidth, attachmentsBounds.Height), UiStyle.Muted, config);
         int x = attachmentsBounds.X + labelWidth;
         int available = Math.Max(0, attachmentsBounds.Right - x - Padding);

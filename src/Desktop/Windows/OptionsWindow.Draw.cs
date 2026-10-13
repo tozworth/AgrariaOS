@@ -47,8 +47,12 @@ partial class OptionsWindow
         }
         if (options.Count == 0)
             UiText.DrawCell(batch, "No options available.", rowsBounds, UiStyle.Muted, config);
+        OptionsElement? hovered = drawnRows.FirstOrDefault(row => row.Bounds.Contains(cursor))?.Option;
         string help = binding != null && capturingInput ? status
-            : drawnRows.FirstOrDefault(row => row.Bounds.Contains(cursor))?.Option.label ?? "";
+            : hovered is SystemOption { Setting: SystemSetting.AutoHide } ? "Reveal at the screen edge; hide after one second."
+            : hovered is SystemOption { Setting: SystemSetting.ExtendedQueue } ? "Allow more than nine queued targets."
+            : hovered is SystemOption { Setting: SystemSetting.RightClickDrag } ? "Box select queues targets on release."
+            : hovered?.label ?? "";
         UiText.DrawCell(batch, help, footer, UiStyle.Muted, config);
         scrollTrack = new Rectangle(rowsBounds.Right + 3, rowsBounds.Y, 6, rowsBounds.Height);
         if (MaxFirstRow > 0)
@@ -69,6 +73,13 @@ partial class OptionsWindow
 
     private void DrawOption(SpriteBatch batch, OptionsElement option, Rectangle row, ModConfig config, Point cursor)
     {
+        if (option.GetType() == typeof(OptionsElement))
+        {
+            UiText.DrawCell(batch, option.label, row, UiStyle.Muted, config);
+            batch.Draw(Game1.staminaRect, new Rectangle(row.X, row.Bottom - 1, row.Width, 1),
+                UiStyle.Border * config.Opacity);
+            return;
+        }
         // These values can also change through native HUD controls or another mod.
         switch (option)
         {
@@ -84,7 +95,20 @@ partial class OptionsWindow
         Rectangle control = new(row.Right - controlWidth, row.Y + 3, controlWidth, row.Height - 6);
         Rectangle label = new(row.X, row.Y, Math.Max(0, row.Width - controlWidth - Padding), row.Height);
         Rectangle minus = Rectangle.Empty, plus = Rectangle.Empty, action = Rectangle.Empty;
-        if (option is OptionsCheckbox checkbox)
+        if (option is SystemOption { Setting: SystemSetting.AutoHide or SystemSetting.ExtendedQueue } systemCheckbox)
+        {
+            control = new Rectangle(row.X, row.Y, 28, row.Height);
+            label = new Rectangle(control.Right, row.Y, row.Width - control.Width, row.Height);
+            bool value = systemCheckbox.Setting == SystemSetting.AutoHide ? config.PelicomAutoHide : config.ExtendedQueue;
+            FormControls.Checkbox(batch, control, value, config, cursor);
+        }
+        else if (option is SystemOption { Setting: SystemSetting.Position })
+            FormControls.Dropdown(batch, control, Pelicom.GetPosition(config).ToString(), config, cursor,
+                enabled, ReferenceEquals(dropdownOption, option) && dropdown.IsOpen);
+        else if (option is SystemOption { Setting: SystemSetting.RightClickDrag })
+            FormControls.Dropdown(batch, control, ValueAt(DragModeLabels, Array.IndexOf(DragModes, config.RightClickDrag)),
+                config, cursor, enabled, ReferenceEquals(dropdownOption, option) && dropdown.IsOpen);
+        else if (option is OptionsCheckbox checkbox)
         {
             control = new Rectangle(row.X, row.Y, 28, row.Height);
             label = new Rectangle(control.Right, row.Y, row.Width - control.Width, row.Height);
@@ -168,6 +192,12 @@ partial class OptionsWindow
             else if (option is OptionsButton)
                 rowWidth = Math.Max(rowWidth, UiText.CellWidth(option.label, config.FontScale));
         }
+        rowWidth = Math.Max(rowWidth, UiText.CellWidth("Pelicom auto-hide", config.FontScale) + 28);
+        rowWidth = Math.Max(rowWidth, UiText.CellWidth("Extended queue", config.FontScale) + 28);
+        rowWidth = Math.Max(rowWidth, UiText.CellWidth("Pelicom position", config.FontScale)
+            + Padding + Math.Max(140, (int)(180 * config.FontScale)));
+        rowWidth = Math.Max(rowWidth, UiText.CellWidth("Right-click drag", config.FontScale)
+            + Padding + Math.Max(140, (int)(180 * config.FontScale)));
         // Divider, heading padding and scrollbar; OsWindow supplies the outer border.
         return 4 + Padding * 2 + 10 + rowWidth;
     }

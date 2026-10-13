@@ -20,14 +20,14 @@ internal sealed partial class NotesWindow : OsWindow
     private readonly ModConfig config;
     private readonly Action saveConfig;
     private readonly Action<Point, ContextMenuItem[]> showContextMenu;
+    private readonly WindowTitlebarAction[] titlebarActions;
     private readonly TreeView tree = new();
     private readonly TextEntry titleEntry = new() { Placeholder = "Title..." };
-    private readonly TextEntry bodyEntry = new() { Placeholder = "Write a note...", Multiline = true };
+    private readonly TextEntry bodyEntry = new() { Placeholder = "Write a note...", Multiline = true, WordWrap = true };
     private readonly TextEntry addEntry = new() { Placeholder = "Add new item..." };
     private long farmerId;
     private string? boundDocId;
     private bool boundIsTodo;
-    private Rectangle addButtonBounds = Rectangle.Empty;
     private Rectangle treeBounds = Rectangle.Empty;
     private Rectangle detailBounds = Rectangle.Empty;
     private Rectangle titleBounds = Rectangle.Empty;
@@ -49,6 +49,7 @@ internal sealed partial class NotesWindow : OsWindow
         this.config = config;
         this.saveConfig = saveConfig;
         this.showContextMenu = showContextMenu;
+        titlebarActions = new[] { new WindowTitlebarAction(UiStyle.DrawAddIcon, ShowCreateMenu) };
         titleEntry.Changed = text =>
         {
             NoteRecord? doc = SelectedDoc();
@@ -91,6 +92,7 @@ internal sealed partial class NotesWindow : OsWindow
         }
     }
     internal override int Icon => NotesIcon;
+    internal override IReadOnlyList<WindowTitlebarAction> TitlebarActions => titlebarActions;
     internal override Point DefaultSize => new(640, 440);
 
     protected override Point GetMinimumSize(ModConfig config)
@@ -101,6 +103,8 @@ internal sealed partial class NotesWindow : OsWindow
     // manager each tick, like the chat composer. Never derive this from Selected.
     private TextEntry? focusedEntry;
     internal override IKeyboardSubscriber? KeyboardSubscriber => focusedEntry;
+    internal override bool WantsKeyboardFocus => focusedEntry != null;
+    internal override void ReleaseKeyboardFocus() => UnfocusAll();
 
     internal override void ReceiveKey(Keys key)
     {
@@ -133,24 +137,14 @@ internal sealed partial class NotesWindow : OsWindow
         try { cursor = new Point(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true)); }
         catch { cursor = Point.Zero; }
 
-        addButtonBounds = treeBounds = detailBounds = titleBounds = bodyBounds
+        treeBounds = detailBounds = titleBounds = bodyBounds
             = newItemBounds = newItemButtonBounds = itemsBounds
             = itemScrollTrack = itemScrollThumb = Rectangle.Empty;
         drawnItems.Clear();
 
         int lineHeight = UiText.LineHeight(config.FontScale);
         rowHeight = lineHeight + 6;
-        int headerHeight = lineHeight + 10;
-        int addWidth = (int)MathF.Ceiling(Game1.smallFont.MeasureString("Add +").X * config.FontScale) + Padding * 2;
-        addButtonBounds = new Rectangle(contentBounds.X, contentBounds.Y + 2,
-            Math.Min(addWidth, contentBounds.Width), Math.Max(0, headerHeight - 4));
-        batch.Draw(Game1.staminaRect, addButtonBounds,
-            UiStyle.Border * (config.Opacity * (addButtonBounds.Contains(cursor) ? 1f : 0.45f)));
-        UiStyle.DrawBorder(batch, addButtonBounds, config.Opacity);
-        DrawCenteredText(batch, "Add +", addButtonBounds, UiStyle.Primary, config);
-
-        Rectangle split = new(contentBounds.X, contentBounds.Y + headerHeight + 4, contentBounds.Width,
-            Math.Max(0, contentBounds.Bottom - contentBounds.Y - headerHeight - 4));
+        Rectangle split = contentBounds;
         int treeWidth = Math.Clamp(split.Width * 35 / 100, 160, 260);
         if (split.Width < 320)
             treeWidth = Math.Max(0, split.Width / 2 - 8);
@@ -166,7 +160,7 @@ internal sealed partial class NotesWindow : OsWindow
         batch.Draw(Game1.staminaRect, new Rectangle(dividerX, split.Y, 1, split.Height), UiStyle.Border * config.Opacity);
         if (doc == null)
         {
-            DrawCenteredText(batch, docs.Count == 0 ? "Click Add to create a note." : "Select a note.",
+            DrawCenteredText(batch, docs.Count == 0 ? "Click + to create a note." : "Select a note.",
                 detailBounds, UiStyle.Muted, config);
             return;
         }
@@ -186,7 +180,7 @@ internal sealed partial class NotesWindow : OsWindow
         }
 
         int addButtonWidth = Math.Min(detailBounds.Width - Padding * 2,
-            (int)MathF.Ceiling(Game1.smallFont.MeasureString("Add").X * config.FontScale) + Padding * 2);
+            (int)MathF.Ceiling(UiText.Measure("Add").X * config.FontScale) + Padding * 2);
         newItemButtonBounds = new Rectangle(detailBounds.Right - Padding - Math.Max(0, addButtonWidth),
             titleBounds.Bottom + Padding, Math.Max(0, addButtonWidth), fieldHeight);
         newItemBounds = new Rectangle(detailBounds.X + Padding, titleBounds.Bottom + Padding,
@@ -209,15 +203,6 @@ internal sealed partial class NotesWindow : OsWindow
     {
         if (!leftClick)
             return;
-        if (addButtonBounds.Contains(cursor))
-        {
-            showContextMenu(new Point(addButtonBounds.X, addButtonBounds.Bottom), new[]
-            {
-                new ContextMenuItem("New Note", () => CreateDoc("note")),
-                new ContextMenuItem("New To-Do List", () => CreateDoc("todo"))
-            });
-            return;
-        }
         if (treeBounds.Contains(cursor))
         {
             string? before = tree.SelectedId;
@@ -231,17 +216,22 @@ internal sealed partial class NotesWindow : OsWindow
         if (titleBounds.Contains(cursor))
         {
             Focus(titleEntry);
+            titleEntry.BeginSelection(cursor, titleBounds, config);
             return;
         }
         if (doc.Kind != "todo")
         {
             if (bodyBounds.Contains(cursor))
+            {
                 Focus(bodyEntry);
+                bodyEntry.BeginSelection(cursor, bodyBounds, config);
+            }
             return;
         }
         if (newItemBounds.Contains(cursor))
         {
             Focus(addEntry);
+            addEntry.BeginSelection(cursor, newItemBounds, config);
             return;
         }
         if (newItemButtonBounds.Contains(cursor))
@@ -288,6 +278,9 @@ internal sealed partial class NotesWindow : OsWindow
     internal override void DragContent(Point cursor)
     {
         tree.Drag(cursor);
+        Rectangle fieldBounds = ReferenceEquals(focusedEntry, titleEntry) ? titleBounds
+            : ReferenceEquals(focusedEntry, bodyEntry) ? bodyBounds : newItemBounds;
+        focusedEntry?.DragSelection(cursor, fieldBounds, config);
         if (itemScrollDragOffset.HasValue && !itemScrollTrack.IsEmpty && itemScrollTrack.Height > itemScrollThumb.Height)
         {
             double fraction = (double)(cursor.Y - itemScrollDragOffset.Value - itemScrollTrack.Y)
@@ -299,6 +292,7 @@ internal sealed partial class NotesWindow : OsWindow
     internal override void EndContentDrag()
     {
         tree.EndDrag();
+        focusedEntry?.EndSelection();
         itemScrollDragOffset = null;
     }
 

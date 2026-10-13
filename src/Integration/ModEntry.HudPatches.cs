@@ -157,7 +157,7 @@ public sealed partial class ModEntry
 
         try
         {
-            Rectangle workArea = mod.pelicom.Value.IsVisible ? Pelicom.GetWorkArea(mod.config)
+            Rectangle workArea = mod.pelicom.Value.IsVisible ? Pelicom.GetHudWorkArea(mod.config)
                 : new Rectangle(0, 0, Game1.uiViewport.Width - 8, Game1.uiViewport.Height - 8);
             mod.statusReadoutRenderer.Value.Draw(b, __instance, mod.config, workArea);
             return false;

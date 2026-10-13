@@ -119,7 +119,7 @@ internal sealed class ChatWindow : OsWindow
     private static int GetMessageWidth(ChatEntry entry, int width, ModConfig config)
     {
         int timestampSpace = config.ShowChatTimestamps
-            ? (int)MathF.Ceiling(Game1.smallFont.MeasureString(entry.Timestamp).X * config.FontScale) + Padding
+            ? (int)MathF.Ceiling(UiText.Measure(entry.Timestamp).X * config.FontScale) + Padding
             : 0;
         return width - timestampSpace - 2;
     }
@@ -161,12 +161,12 @@ internal sealed class ChatWindow : OsWindow
             {
                 string speaker = text[..speakerLength];
                 UiText.DrawBold(batch, speaker, new Vector2(rowsBounds.X, y), UiStyle.SpeakerColor(line.Entry.Speaker), config);
-                messageX += (int)MathF.Ceiling(Game1.smallFont.MeasureString(speaker).X * config.FontScale) + 1;
+                messageX += (int)MathF.Ceiling(UiText.Measure(speaker).X * config.FontScale) + 1;
             }
             UiText.Draw(batch, text[speakerLength..], new Vector2(messageX, y), UiStyle.Primary, config);
             if (config.ShowChatTimestamps && line.First)
             {
-                int timestampWidth = (int)MathF.Ceiling(Game1.smallFont.MeasureString(line.Entry.Timestamp).X * config.FontScale);
+                int timestampWidth = (int)MathF.Ceiling(UiText.Measure(line.Entry.Timestamp).X * config.FontScale);
                 if (timestampWidth < rowsBounds.Width)
                     UiText.Draw(batch, line.Entry.Timestamp, new Vector2(rowsBounds.Right - timestampWidth - 1, y), UiStyle.Muted, config);
             }
@@ -174,7 +174,7 @@ internal sealed class ChatWindow : OsWindow
 
         if (!canCompose || body.Height < composerHeight + Padding * 2 || bodyWidth < 32)
             return;
-        int sendWidth = Math.Min(bodyWidth / 3, (int)MathF.Ceiling(Game1.smallFont.MeasureString("Send").X * config.FontScale) + Padding * 2);
+        int sendWidth = Math.Min(bodyWidth / 3, (int)MathF.Ceiling(UiText.Measure("Send").X * config.FontScale) + Padding * 2);
         sendBounds = new Rectangle(body.Right - Padding - sendWidth, body.Bottom - Padding - composerHeight, sendWidth, composerHeight);
         composerBounds = new Rectangle(body.X + Padding, sendBounds.Y, Math.Max(0, bodyWidth - sendWidth - Padding), composerHeight);
         composer.Draw(batch, composerBounds, config);

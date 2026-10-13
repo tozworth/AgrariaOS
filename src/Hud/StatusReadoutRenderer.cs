@@ -69,7 +69,7 @@ internal sealed partial class StatusReadoutRenderer : IDisposable
         bool showJournal = config.ShowJournal && Game1.player.hasVisibleQuests;
         bool showZoom = config.ShowZoomControls && Game1.options.zoomButtons;
         string journal = showJournal ? (Game1.player.hasNewQuestActivity() ? "[Journal !]" : "[Journal]") : "";
-        Vector2 timeSize = font.MeasureString(timeText) * scale;
+        Vector2 timeSize = UiText.Measure(timeText) * scale;
         float timeWidth = MathF.Ceiling(timeSize.X);
         int iconScale = Math.Max(1, (int)MathF.Round(scale));
         int pauseWidth = 6 * iconScale;
@@ -79,15 +79,15 @@ internal sealed partial class StatusReadoutRenderer : IDisposable
         int pauseSpace = config.ShowTime ? pauseWidth + pausePadding * 2 : 0;
         string visibleDate = config.ShowDate ? (config.ShowTime ? "| " : "") + dateText : "";
         float width = Math.Max((config.ShowTime ? timeWidth + pauseSpace : 0)
-            + font.MeasureString(visibleDate).X * scale, font.MeasureString(conditionsAndMoney).X * scale);
+            + UiText.Measure(visibleDate).X * scale, UiText.Measure(conditionsAndMoney).X * scale);
         if (showLocationLine)
-            width = Math.Max(width, ((config.ShowLocation ? font.MeasureString(locationText).X : 0)
-                + font.MeasureString(securityText).X) * scale);
+            width = Math.Max(width, ((config.ShowLocation ? UiText.Measure(locationText).X : 0)
+                + UiText.Measure(securityText).X) * scale);
         // Include controls in the layout so the full readout stays inside the work area.
-        float controlsWidth = showJournal ? MathF.Ceiling(font.MeasureString(journal).X * scale) + 4 : 0;
+        float controlsWidth = showJournal ? MathF.Ceiling(UiText.Measure(journal).X * scale) + 4 : 0;
         if (showZoom)
-            controlsWidth += (showJournal ? 14 : 0) + MathF.Ceiling(font.MeasureString("[-]").X * scale)
-                + MathF.Ceiling(font.MeasureString("[+]").X * scale) + 18;
+            controlsWidth += (showJournal ? 14 : 0) + MathF.Ceiling(UiText.Measure("[-]").X * scale)
+                + MathF.Ceiling(UiText.Measure("[+]").X * scale) + 18;
         width = Math.Max(width, controlsWidth);
 
         int lineCount = (showLocationLine ? 1 : 0) + (showDateLine ? 1 : 0) + (showConditionsLine ? 1 : 0)
@@ -97,7 +97,7 @@ internal sealed partial class StatusReadoutRenderer : IDisposable
         if (showRestoreLabel)
         {
             lineCount = 1;
-            width = font.MeasureString("[Status]").X * scale;
+            width = UiText.Measure("[Status]").X * scale;
         }
         float x = MathF.Floor(Math.Clamp(Math.Max(config.X, workArea.Left), 0, Math.Max(0, workArea.Right - width)));
         float y = MathF.Floor(Math.Clamp(Math.Max(config.Y, workArea.Top), 0, Math.Max(0, workArea.Bottom - lineCount * lineHeight)));
@@ -113,7 +113,7 @@ internal sealed partial class StatusReadoutRenderer : IDisposable
             if (config.ShowLocation)
             {
                 UiText.Draw(batch, locationText, new Vector2(x, y), SecondaryColor, config);
-                securityX += MathF.Ceiling(font.MeasureString(locationText).X * scale);
+                securityX += MathF.Ceiling(UiText.Measure(locationText).X * scale);
             }
             if (config.ShowSecurity)
                 UiText.Draw(batch, securityText, new Vector2(securityX, y), SecurityStatus.GetColor(security), config);
@@ -205,7 +205,7 @@ internal sealed partial class StatusReadoutRenderer : IDisposable
 
     private static Rectangle DrawControl(SpriteBatch batch, string text, Vector2 position, ModConfig config)
     {
-        Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
+        Vector2 size = UiText.Measure(text) * config.FontScale;
         var bounds = new Rectangle((int)position.X - 2, (int)position.Y - 2, (int)Math.Ceiling(size.X) + 4, (int)Math.Ceiling(size.Y) + 4);
         Color color = bounds.Contains(Game1.getMouseX(), Game1.getMouseY()) ? PrimaryColor : SecondaryColor;
         UiText.Draw(batch, text, position, color, config);

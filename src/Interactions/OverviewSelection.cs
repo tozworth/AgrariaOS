@@ -22,7 +22,7 @@ internal sealed class OverviewSelection
     }
 
     // false signals the shared queue/selection cap; keep the existing selection intact.
-    internal bool Click(string key, IReadOnlyList<string> keys, bool control, bool shift)
+    internal bool Click(string key, IReadOnlyList<string> keys, bool control, bool shift, bool extendedQueue = false)
     {
         Refresh(keys);
         int start = anchor == null ? -1 : IndexOf(keys, anchor);
@@ -34,7 +34,7 @@ internal sealed class OverviewSelection
             var range = control ? new HashSet<string>(selected, StringComparer.Ordinal) : new(StringComparer.Ordinal);
             for (int i = Math.Min(start, end); i <= Math.Max(start, end); i++)
                 range.Add(keys[i]);
-            if (range.Count > ClickToMove.MaxQueued)
+            if (!extendedQueue && range.Count > ClickToMove.MaxQueued)
                 return false;
             selected.Clear();
             selected.UnionWith(range);
@@ -44,7 +44,7 @@ internal sealed class OverviewSelection
             SelectOnly(key);
         else if (!selected.Remove(key))
         {
-            if (Count >= ClickToMove.MaxQueued)
+            if (!extendedQueue && Count >= ClickToMove.MaxQueued)
                 return false;
             selected.Add(key);
             anchor = key;

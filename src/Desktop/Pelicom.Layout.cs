@@ -10,13 +10,13 @@ namespace AgrariaOS.Desktop;
 
 partial class Pelicom : IClickableMenu
 {
-    // Vanilla draws on-screen menus before HUD messages in the same UI batch,
-    // so this follows the bell's current visible slot, including custom ordering.
-    internal Rectangle NotificationBounds => IsVisible ? drawnSlots[NotificationsEntryIndex] : Rectangle.Empty;
+    internal Rectangle NotificationBounds => IsVisible
+        ? Rectangle.Intersect(drawnSlots[NotificationsEntryIndex], GetWorkArea(config)) : Rectangle.Empty;
 
-    private void SetPosition(PelicomEdge edge)
+    internal void SetPosition(PelicomEdge edge)
     {
         config.PelicomPositions[Game1.player.UniqueMultiplayerID] = edge;
+        autoHide.Reset();
         drawnBounds = Rectangle.Empty;
         Array.Clear(drawnSlots);
         CancelPress();
@@ -26,15 +26,45 @@ partial class Pelicom : IClickableMenu
     internal static PelicomEdge GetPosition(ModConfig config)
         => config.PelicomPositions.GetValueOrDefault(Game1.player.UniqueMultiplayerID, PelicomEdge.Left);
 
-    internal static Rectangle GetWorkArea(ModConfig config, int margin = 8)
+    // Pelicom overlays the desktop; windows can reach every screen edge.
+    internal static Rectangle GetWorkArea(ModConfig config, int margin = 0)
+        => new(margin, margin, Math.Max(0, Game1.uiViewport.Width - margin * 2),
+            Math.Max(0, Game1.uiViewport.Height - margin * 2));
+
+    // Keep the status readout clear of a pinned rail without constraining desktop windows.
+    internal static Rectangle GetHudWorkArea(ModConfig config)
     {
+        const int margin = 8;
         PelicomEdge edge = GetPosition(config);
-        int left = margin + (edge == PelicomEdge.Left ? StripWidth : 0);
-        int top = margin + (edge == PelicomEdge.Top ? StripWidth : 0);
-        int right = Game1.uiViewport.Width - margin - (edge == PelicomEdge.Right ? StripWidth : 0);
-        int bottom = Game1.uiViewport.Height - margin - (edge == PelicomEdge.Bottom ? StripWidth : 0);
+        int inset = config.PelicomAutoHide ? 0 : StripWidth;
+        int left = margin + (edge == PelicomEdge.Left ? inset : 0);
+        int top = margin + (edge == PelicomEdge.Top ? inset : 0);
+        int right = Game1.uiViewport.Width - margin - (edge == PelicomEdge.Right ? inset : 0);
+        int bottom = Game1.uiViewport.Height - margin - (edge == PelicomEdge.Bottom ? inset : 0);
         return new Rectangle(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
     }
+
+    private Rectangle GetStripBounds()
+    {
+        PelicomEdge edge = GetPosition(config);
+        int hidden = (int)Math.Round(StripWidth * (1 - autoHide.Shown));
+        return edge switch
+        {
+            PelicomEdge.Left => new Rectangle(-hidden, 0, StripWidth, Game1.uiViewport.Height),
+            PelicomEdge.Right => new Rectangle(Game1.uiViewport.Width - StripWidth + hidden, 0, StripWidth, Game1.uiViewport.Height),
+            PelicomEdge.Top => new Rectangle(0, -hidden, Game1.uiViewport.Width, StripWidth),
+            _ => new Rectangle(0, Game1.uiViewport.Height - StripWidth + hidden, Game1.uiViewport.Width, StripWidth)
+        };
+    }
+
+    private Rectangle GetRevealBounds()
+        => GetPosition(config) switch
+        {
+            PelicomEdge.Left => new Rectangle(0, 0, 2, Game1.uiViewport.Height),
+            PelicomEdge.Right => new Rectangle(Game1.uiViewport.Width - 2, 0, 2, Game1.uiViewport.Height),
+            PelicomEdge.Top => new Rectangle(0, 0, Game1.uiViewport.Width, 2),
+            _ => new Rectangle(0, Game1.uiViewport.Height - 2, Game1.uiViewport.Width, 2)
+        };
 
     private List<int> GetDisplayOrder() => GetDisplayOrder(out _);
 
@@ -160,6 +190,7 @@ partial class Pelicom : IClickableMenu
         drawnBounds = Rectangle.Empty;
         Array.Clear(drawnSlots);
         CancelPress();
+        autoHide.Reset();
     }
 
 }

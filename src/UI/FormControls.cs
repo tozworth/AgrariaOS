@@ -59,7 +59,7 @@ internal static class FormControls
     private static void CenteredText(SpriteBatch batch, string text, Rectangle bounds, Color color, ModConfig config)
     {
         text = UiText.Fit(text, Math.Max(0, bounds.Width - 9), config.FontScale);
-        Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
+        Vector2 size = UiText.Measure(text) * config.FontScale;
         if (text.Length > 0 && size.Y + 1 <= bounds.Height)
             UiText.Draw(batch, text, new Vector2(bounds.Center.X - size.X / 2, bounds.Center.Y - size.Y / 2), color, config);
     }

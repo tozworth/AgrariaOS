@@ -29,6 +29,7 @@ partial class NotesWindow : OsWindow
 
     private void UnfocusAll()
     {
+        focusedEntry?.EndSelection();
         focusedEntry = null;
         titleEntry.Selected = bodyEntry.Selected = addEntry.Selected = false;
     }
@@ -87,6 +88,15 @@ partial class NotesWindow : OsWindow
             roots.Add(new TreeNode(doc.Id, label, total > 0 && done == total));
         }
         return roots;
+    }
+
+    private void ShowCreateMenu()
+    {
+        showContextMenu(new Point(TitlebarActionsLeft, TitleBounds.Bottom), new[]
+        {
+            new ContextMenuItem("New Note", () => CreateDoc("note")),
+            new ContextMenuItem("New To-Do List", () => CreateDoc("todo"))
+        });
     }
 
     private void CreateDoc(string kind)

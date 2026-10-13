@@ -43,6 +43,33 @@ partial class OptionsWindow
         if (row == null || row.Option.greyedOut) return;
         switch (row.Option)
         {
+            case SystemOption { Setting: SystemSetting.AutoHide }:
+                config.PelicomAutoHide = !config.PelicomAutoHide;
+                saveConfig();
+                break;
+            case SystemOption { Setting: SystemSetting.ExtendedQueue }:
+                config.ExtendedQueue = !config.ExtendedQueue;
+                saveConfig();
+                break;
+            case SystemOption { Setting: SystemSetting.RightClickDrag } dragMode when row.Control.Contains(cursor):
+                dropdownOption = dragMode;
+                dropdown.Open(DragModeLabels, Array.IndexOf(DragModes, config.RightClickDrag), index =>
+                {
+                    if (index < 0 || index >= DragModes.Length) return;
+                    config.RightClickDrag = DragModes[index];
+                    saveConfig();
+                });
+                capturingInput = dropdown.IsOpen;
+                break;
+            case SystemOption { Setting: SystemSetting.Position } position when row.Control.Contains(cursor):
+                dropdownOption = position;
+                dropdown.Open(PelicomEdgeLabels, Array.IndexOf(PelicomEdges, Pelicom.GetPosition(config)), index =>
+                {
+                    if (index >= 0 && index < PelicomEdges.Length)
+                        setPelicomPosition(PelicomEdges[index]);
+                });
+                capturingInput = dropdown.IsOpen;
+                break;
             case OptionsCheckbox checkbox:
                 checkbox.receiveLeftClick(checkbox.bounds.Center.X, checkbox.bounds.Center.Y);
                 Changed();

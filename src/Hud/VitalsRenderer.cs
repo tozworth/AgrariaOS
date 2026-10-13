@@ -30,8 +30,8 @@ internal static class VitalsRenderer
         string energy = string.Create(CultureInfo.InvariantCulture, $"{(int)Math.Max(0f, player.Stamina)}/{player.MaxStamina}");
         float iconScale = GetIconScale(config);
         float iconWidth = IconSize * iconScale;
-        float healthWidth = MathF.Ceiling(Game1.smallFont.MeasureString(health).X * config.FontScale);
-        float energyWidth = MathF.Ceiling(Game1.smallFont.MeasureString(energy).X * config.FontScale);
+        float healthWidth = MathF.Ceiling(UiText.Measure(health).X * config.FontScale);
+        float energyWidth = MathF.Ceiling(UiText.Measure(energy).X * config.FontScale);
         float width = 2 * (iconWidth + IconGap) + healthWidth + StatGap + energyWidth;
         int height = GetHeight(config);
         Vector2 position = new(MathF.Floor(toolbar.Right - width), toolbar.Top - ToolbarGap - height);

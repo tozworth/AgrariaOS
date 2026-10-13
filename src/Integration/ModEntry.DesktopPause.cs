@@ -49,7 +49,7 @@ public sealed partial class ModEntry
     }
 
     private static bool DesktopMovementPrefix(Farmer __instance)
-        => __instance != Game1.player || !Instance.HasDesktopFocus;
+        => __instance != Game1.player || !(Instance.HasDesktopFocus || Instance.boxSelectDrag.Value.IsActive);
 
     private static bool DesktopActionPrefix(ref bool __result)
     {

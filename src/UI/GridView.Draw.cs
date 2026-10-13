@@ -59,7 +59,7 @@ partial class GridView<TRow> where TRow : class
         if (rows.Count == 0)
         {
             emptyText = UiText.Fit(emptyText, Math.Max(0, RowsBounds.Width - 1), config.FontScale);
-            Vector2 size = Game1.smallFont.MeasureString(emptyText) * config.FontScale;
+            Vector2 size = UiText.Measure(emptyText) * config.FontScale;
             if (emptyText.Length > 0 && size.Y + 1 <= RowsBounds.Height)
                 UiText.Draw(batch, emptyText, new Vector2(RowsBounds.X + (RowsBounds.Width - size.X) / 2,
                     RowsBounds.Y + (RowsBounds.Height - size.Y) / 2), UiStyle.Muted, config);

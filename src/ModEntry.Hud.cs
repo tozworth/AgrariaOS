@@ -35,6 +35,11 @@ partial class ModEntry : Mod
             return;
         }
         Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+        if (pelicom.Value.isWithinBounds(cursor.X, cursor.Y) && !windowManager.Value.IsContextMenuOpen)
+        {
+            hardwareCursor.Reset();
+            return;
+        }
         WindowResizeEdges edges = windowManager.Value.GetResizeCursorEdges(cursor);
         bool textField = edges == WindowResizeEdges.None && windowManager.Value.IsTextFieldHovered(cursor);
         hardwareCursor.Update(edges, textField);

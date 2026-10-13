@@ -19,11 +19,13 @@ namespace AgrariaOS.Desktop;
 
 partial class WindowManager
 {
-    internal bool ReceiveClick(Point cursor, bool leftClick, IInputHelper input)
+    internal bool ReceiveClick(Point cursor, bool leftClick, IInputHelper input, Func<bool>? overlayClick = null)
     {
         if (!leftClick)
             EndDrag();
         if (CanReceiveInput && contextMenu.ReceiveClick(cursor, leftClick))
+            return true;
+        if (CanReceiveInput && overlayClick?.Invoke() == true)
             return true;
         OsWindow? window = GetWindowAt(cursor);
         if (window == null)

@@ -3,6 +3,7 @@ using StardewModdingAPI;
 namespace AgrariaOS.Configuration;
 
 public enum PelicomEdge { Left, Right, Top, Bottom }
+public enum RightClickDragMode { PerTile, BoxSelect }
 
 public sealed class TodoRecord
 {
@@ -25,6 +26,8 @@ public sealed class ModConfig
 {
     public bool Enabled { get; set; } = true;
     public bool ClickToMove { get; set; } = true;
+    public bool ExtendedQueue { get; set; }
+    public RightClickDragMode RightClickDrag { get; set; } = RightClickDragMode.PerTile;
     public bool HoverHighlight { get; set; } = true;
     public SButton ToggleKey { get; set; } = SButton.F8;
     public SButton OverviewKey { get; set; } = SButton.O;
@@ -44,6 +47,7 @@ public sealed class ModConfig
     public bool ShowJournal { get; set; } = true;
     public bool ShowZoomControls { get; set; } = true;
     public bool ShowChatTimestamps { get; set; } = true;
+    public bool PelicomAutoHide { get; set; }
     public Dictionary<long, PelicomEdge> PelicomPositions { get; set; } = new();
     // Pelicom icon order (entry ids, top-to-bottom or left-to-right), per farmer.
     public Dictionary<long, List<string>> PelicomOrder { get; set; } = new();
@@ -65,6 +69,8 @@ public sealed class ModConfig
 
     internal void Normalize()
     {
+        if (!Enum.IsDefined(typeof(RightClickDragMode), RightClickDrag))
+            RightClickDrag = RightClickDragMode.PerTile;
         X = Math.Max(0, X);
         Y = Math.Max(0, Y);
         TextScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 0.5f, 2f) : 1f;

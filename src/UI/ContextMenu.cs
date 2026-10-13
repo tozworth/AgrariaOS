@@ -68,8 +68,8 @@ internal sealed class ContextMenu
         this.isValid = isValid;
         headerHeight = title == null ? 0 : rowHeight;
         int width = Math.Min(Game1.uiViewport.Width, Math.Max(100,
-            (int)MathF.Ceiling(Math.Max(entries.Max(item => Game1.smallFont.MeasureString(item.Text).X),
-                Game1.smallFont.MeasureString(title ?? "").X) * config.FontScale)
+            (int)MathF.Ceiling(Math.Max(entries.Max(item => UiText.Measure(item.Text).X),
+                UiText.Measure(title ?? "").X) * config.FontScale)
             + checkWidth + arrowWidth + Padding * 2 + 3));
         visibleRows = Math.Min(entries.Length, (Game1.uiViewport.Height - headerHeight - 2) / rowHeight);
         // Long contact lists scroll instead of disappearing or clipping outside the viewport.
@@ -209,7 +209,7 @@ internal sealed class ContextMenu
             }
 
             string text = UiText.Fit(item.Text, row.Width - checkWidth - arrowWidth - Padding * 2 - 1, config.FontScale);
-            Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
+            Vector2 size = UiText.Measure(text) * config.FontScale;
             UiText.Draw(batch, text, new Vector2(row.X + Padding + checkWidth, row.Y + (row.Height - size.Y) / 2),
                 color, config);
             if (item.Children is { Length: > 0 })

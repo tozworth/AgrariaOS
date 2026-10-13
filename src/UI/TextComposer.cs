@@ -123,21 +123,21 @@ internal sealed class TextComposer : IKeyboardSubscriber
             batch.Draw(Game1.staminaRect, new Rectangle(bounds.X, bounds.Bottom - 1, bounds.Width, 1), UiStyle.Primary * config.Opacity);
         int width = bounds.Width - 14;
         firstCharacter = Math.Min(firstCharacter, caret);
-        while (firstCharacter < caret && Game1.smallFont.MeasureString(text[firstCharacter..caret]).X * config.FontScale > width - 2)
+        while (firstCharacter < caret && UiText.Measure(text[firstCharacter..caret]).X * config.FontScale > width - 2)
             firstCharacter = Next(firstCharacter);
         // Reveal earlier text again after deletion or moving back through the draft.
-        while (firstCharacter > 0 && Game1.smallFont.MeasureString(text[Previous(firstCharacter)..caret]).X * config.FontScale <= width - 2)
+        while (firstCharacter > 0 && UiText.Measure(text[Previous(firstCharacter)..caret]).X * config.FontScale <= width - 2)
             firstCharacter = Previous(firstCharacter);
         int end = firstCharacter;
-        while (end < text.Length && Game1.smallFont.MeasureString(text[firstCharacter..Next(end)]).X * config.FontScale <= width)
+        while (end < text.Length && UiText.Measure(text[firstCharacter..Next(end)]).X * config.FontScale <= width)
             end = Next(end);
         string visible = text[firstCharacter..end];
-        float y = bounds.Y + (bounds.Height - Game1.smallFont.MeasureString("A").Y * config.FontScale) / 2;
+        float y = bounds.Y + (bounds.Height - UiText.Measure("A").Y * config.FontScale) / 2;
         UiText.Draw(batch, text.Length == 0 ? UiText.Fit(placeholder, width, config.FontScale) : visible,
             new Vector2(bounds.X + 6, y), text.Length == 0 ? UiStyle.Muted : UiStyle.Primary, config);
         if (Selected && Game1.currentGameTime.TotalGameTime.TotalMilliseconds % 1000 < 500)
         {
-            int x = bounds.X + 6 + (int)MathF.Round(Game1.smallFont.MeasureString(text[firstCharacter..caret]).X * config.FontScale);
+            int x = bounds.X + 6 + (int)MathF.Round(UiText.Measure(text[firstCharacter..caret]).X * config.FontScale);
             batch.Draw(Game1.staminaRect, new Rectangle(x, (int)MathF.Round(y), 1, UiText.LineHeight(config.FontScale) - 2), UiStyle.Primary * config.Opacity);
         }
     }

@@ -63,7 +63,8 @@ internal sealed class ToolbarRenderer
         if (Game1.activeClickableMenu != null)
             return;
 
-        Rectangle strip = UpdateLayout(toolbar, showPelicom && Pelicom.GetPosition(config) == PelicomEdge.Bottom ? Pelicom.StripWidth : 0);
+        Rectangle strip = UpdateLayout(toolbar, showPelicom && !config.PelicomAutoHide
+            && Pelicom.GetPosition(config) == PelicomEdge.Bottom ? Pelicom.StripWidth : 0);
         if (Game1.options.pinToolbarToggle)
         {
             // Match vanilla's fade when the player approaches a pinned toolbar.

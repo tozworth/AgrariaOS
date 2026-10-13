@@ -33,14 +33,14 @@ internal sealed class TabBar
         for (int i = 0; i < tabs.Length && x < bounds.Right; i++)
         {
             int width = Math.Min(bounds.Right - x,
-                (int)MathF.Ceiling(Game1.smallFont.MeasureString(tabs[i].Label).X * config.FontScale) + 24);
+                (int)MathF.Ceiling(UiText.Measure(tabs[i].Label).X * config.FontScale) + 24);
             Rectangle tabBounds = new(x, bounds.Y, width, height);
             hitBoxes[i] = tabBounds;
             bool selected = SelectedId == tabs[i].Id;
             if (selected || tabBounds.Contains(cursor))
                 batch.Draw(Game1.staminaRect, tabBounds, UiStyle.Border * (config.Opacity * (selected ? 0.6f : 0.35f)));
             string label = UiText.Fit(tabs[i].Label, Math.Max(0, width - 12), config.FontScale);
-            Vector2 size = Game1.smallFont.MeasureString(label) * config.FontScale;
+            Vector2 size = UiText.Measure(label) * config.FontScale;
             if (label.Length > 0 && size.Y + 1 <= height)
                 UiText.Draw(batch, label, new Vector2(x + 6, bounds.Y + (height - size.Y) / 2),
                     selected ? UiStyle.Primary : UiStyle.Muted, config);

@@ -242,10 +242,10 @@ internal abstract class OsWindow
         // Keep the subtext visible when a long title (such as a chest name) is clipped.
         int width = Math.Max(0, bounds.Width - 1);
         subtext = UiText.Fit(subtext, width, config.FontScale);
-        Vector2 subtextSize = Game1.smallFont.MeasureString(subtext) * config.FontScale;
-        float gap = string.IsNullOrEmpty(subtext) ? 0 : Game1.smallFont.MeasureString(" ").X * config.FontScale;
+        Vector2 subtextSize = UiText.Measure(subtext) * config.FontScale;
+        float gap = string.IsNullOrEmpty(subtext) ? 0 : UiText.Measure(" ").X * config.FontScale;
         string title = UiText.Fit(Title, Math.Max(0, width - (int)MathF.Ceiling(subtextSize.X + gap)), config.FontScale);
-        Vector2 titleSize = Game1.smallFont.MeasureString(title) * config.FontScale;
+        Vector2 titleSize = UiText.Measure(title) * config.FontScale;
         if (string.IsNullOrEmpty(title))
             gap = 0;
         float height = Math.Max(titleSize.Y, subtextSize.Y);
@@ -260,7 +260,7 @@ internal abstract class OsWindow
     protected static void DrawCenteredText(SpriteBatch batch, string text, Rectangle bounds, Color color, ModConfig config)
     {
         text = UiText.Fit(text, Math.Max(0, bounds.Width - 1), config.FontScale);
-        Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
+        Vector2 size = UiText.Measure(text) * config.FontScale;
         if (string.IsNullOrEmpty(text) || size.Y + 1 > bounds.Height)
             return;
         UiText.Draw(batch, text, new Vector2(bounds.X + (bounds.Width - size.X) / 2,

@@ -342,21 +342,21 @@ internal sealed class JournalWindow : OsWindow
         int y = actionBounds.Y + 2;
         if (canClaim)
         {
-            int width = (int)MathF.Ceiling(Game1.smallFont.MeasureString(claimText).X * config.FontScale) + Padding * 2;
+            int width = (int)MathF.Ceiling(UiText.Measure(claimText).X * config.FontScale) + Padding * 2;
             claimBounds = new Rectangle(x, y, Math.Min(width, Math.Max(0, actionBounds.Right - x)), buttonHeight);
             DrawActionButton(batch, claimBounds, claimText, cursor, config);
         }
         else if (canCancel)
         {
             const string text = "Cancel quest";
-            int width = (int)MathF.Ceiling(Game1.smallFont.MeasureString(text).X * config.FontScale) + Padding * 2;
+            int width = (int)MathF.Ceiling(UiText.Measure(text).X * config.FontScale) + Padding * 2;
             cancelBounds = new Rectangle(x, y, Math.Min(width, Math.Max(0, actionBounds.Right - x)), buttonHeight);
             DrawActionButton(batch, cancelBounds, text, cursor, config);
         }
         else if (canDismiss)
         {
             const string text = "Done";
-            int width = (int)MathF.Ceiling(Game1.smallFont.MeasureString(text).X * config.FontScale) + Padding * 2;
+            int width = (int)MathF.Ceiling(UiText.Measure(text).X * config.FontScale) + Padding * 2;
             dismissBounds = new Rectangle(x, y, Math.Min(width, Math.Max(0, actionBounds.Right - x)), buttonHeight);
             DrawActionButton(batch, dismissBounds, text, cursor, config);
         }

@@ -12,11 +12,17 @@ partial class Pelicom : IClickableMenu
 {
     public override void draw(SpriteBatch b)
     {
+        // Keep vanilla menus' behind-menu rail; normal HUD drawing happens after desktop frames.
+        if (Game1.activeClickableMenu is GameMenu)
+            DrawOverlay(b);
+    }
+
+    internal void DrawOverlay(SpriteBatch b)
+    {
         drawnBounds = Rectangle.Empty;
         Array.Clear(drawnSlots);
         pendingTooltip = Rectangle.Empty;
-        pendingTooltipLabel = "";
-        if (!IsVisible)
+        if (!IsVisible || autoHide.Shown <= 0)
             return;
 
         try
@@ -27,26 +33,7 @@ partial class Pelicom : IClickableMenu
         {
             drawnBounds = Rectangle.Empty;
             pendingTooltip = Rectangle.Empty;
-            pendingTooltipLabel = "";
             CancelPress();
-            onDrawFailed(ex);
-        }
-    }
-
-    internal void DrawTooltip(SpriteBatch batch)
-    {
-        if (pendingTooltip.IsEmpty || string.IsNullOrEmpty(pendingTooltipLabel))
-            return;
-        if (!IsInteractive)
-            return;
-        try
-        {
-            DrawTooltipRect(batch, pendingTooltip, pendingTooltipLabel);
-        }
-        catch (Exception ex)
-        {
-            pendingTooltip = Rectangle.Empty;
-            pendingTooltipLabel = "";
             onDrawFailed(ex);
         }
     }
@@ -61,9 +48,7 @@ partial class Pelicom : IClickableMenu
     {
         PelicomEdge edge = GetPosition(config);
         bool horizontal = edge is PelicomEdge.Top or PelicomEdge.Bottom;
-        Rectangle strip = horizontal
-            ? new Rectangle(0, edge == PelicomEdge.Top ? 0 : Math.Max(0, Game1.uiViewport.Height - StripWidth), Game1.uiViewport.Width, StripWidth)
-            : new Rectangle(edge == PelicomEdge.Left ? 0 : Math.Max(0, Game1.uiViewport.Width - StripWidth), 0, StripWidth, Game1.uiViewport.Height);
+        Rectangle strip = GetStripBounds();
         int mouseX = Game1.getMouseX(ui_scale: true);
         int mouseY = Game1.getMouseY(ui_scale: true);
         int hovered = -1;
@@ -76,7 +61,7 @@ partial class Pelicom : IClickableMenu
         // Keep an end drop target even after its last icon is moved out.
         drawnEndStart = bottomCount > 0 ? separator : length - TopPadding - SlotHeight;
         string clock = horizontal ? StatusReadoutRenderer.FormatTime(Game1.timeOfDay, config.Use24HourClock) : "";
-        Vector2 clockSize = Game1.smallFont.MeasureString(clock);
+        Vector2 clockSize = UiText.Measure(clock);
         int clockWidth = horizontal ? (int)MathF.Ceiling(clockSize.X) + TopPadding * 2 : 0;
         int startLimit = separator - TopPadding - clockWidth;
 
@@ -198,7 +183,7 @@ partial class Pelicom : IClickableMenu
         }
         if (tooltipLabel != null)
         {
-            Vector2 size = Game1.smallFont.MeasureString(tooltipLabel) * config.FontScale;
+            Vector2 size = UiText.Measure(tooltipLabel) * config.FontScale;
             int width = Math.Min(Game1.uiViewport.Width, (int)MathF.Ceiling(size.X) + 12);
             int height = Math.Min(Game1.uiViewport.Height, (int)MathF.Ceiling(size.Y) + 4);
             int x = edge == PelicomEdge.Right ? strip.Left - width - 4
@@ -209,7 +194,6 @@ partial class Pelicom : IClickableMenu
             Rectangle tooltip = new(Math.Clamp(x, 0, Math.Max(0, Game1.uiViewport.Width - width)),
                 Math.Clamp(y, 0, Math.Max(0, Game1.uiViewport.Height - height)), width, height);
             pendingTooltip = tooltip;
-            pendingTooltipLabel = tooltipLabel;
             DrawTooltipRect(batch, tooltip, tooltipLabel);
         }
 

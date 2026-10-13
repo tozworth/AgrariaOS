@@ -85,9 +85,9 @@ internal sealed partial class Pelicom : IClickableMenu
     private readonly Func<bool> isOverviewMinimized;
     private readonly Action openOptions;
     private readonly Func<bool> isOptionsMinimized;
-    private bool autoHideChecked;
     private readonly Action saveConfig;
     private readonly Func<string, bool> minimizeOpenWindow;
+    private readonly PelicomAutoHide autoHide = new();
     private readonly Rectangle[] drawnSlots = new Rectangle[Entries.Length];
     private Rectangle drawnBounds;
     // Press-to-reorder state. The press suppresses the world click; release without
@@ -100,11 +100,8 @@ internal sealed partial class Pelicom : IClickableMenu
     private int? dropPosition;
     private bool dropInEndGroup;
     private int drawnEndStart;
-    // The strip draws inside Game1.drawHUD via onScreenMenus, so its hover tip would sit
-    // below desktop windows drawn later in RenderedHud. Remember the tip and replay it
-    // above windows through DrawTooltip.
+    // The rail and its tooltip draw above desktop frames, below context menus.
     private Rectangle pendingTooltip;
-    private string pendingTooltipLabel = "";
 
     public Pelicom(ModConfig config, Func<bool> isEnabled, Action<Exception> onDrawFailed,
         Action openMail, Func<bool> isMailMinimized, Action openJournal, Func<bool> isJournalMinimized, Func<bool> hasNewQuestActivity, Action openInventory, Func<bool> isInventoryMinimized,
@@ -170,8 +167,6 @@ internal sealed partial class Pelicom : IClickableMenu
 
 
 
-    // Replays the hover tip computed by the last draw above desktop windows.
-    // WindowManager invokes this after its frames but before the context menu.
 
 
 }

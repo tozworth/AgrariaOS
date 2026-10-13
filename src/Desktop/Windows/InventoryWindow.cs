@@ -151,7 +151,7 @@ internal sealed partial class InventoryWindow : OsWindow
         if (count == 0)
             return;
         string label = $"{count} stack{(count == 1 ? "" : "s")}";
-        int width = (int)MathF.Ceiling(Game1.smallFont.MeasureString(label).X * config.FontScale) + IconSize + Padding * 4 + 1;
+        int width = (int)MathF.Ceiling(UiText.Measure(label).X * config.FontScale) + IconSize + Padding * 4 + 1;
         Rectangle badge = new(cursor.X + 16, cursor.Y + 16, Math.Min(width, Game1.uiViewport.Width),
             grid.GetRowHeight(Game1.smallFont, config.FontScale, IconSize + Padding) + Padding * 2);
         badge.X = Math.Clamp(badge.X, 0, Math.Max(0, Game1.uiViewport.Width - badge.Width));

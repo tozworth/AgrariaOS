@@ -24,6 +24,7 @@ internal sealed partial class WindowManager
     private readonly Func<bool> isVisible;
     private readonly Action<Exception> onDrawFailed;
     private readonly Action saveConfig;
+    private readonly Action<PelicomEdge> setPelicomPosition;
     private readonly Action<Exception> onTransferFailed;
     private readonly LookupAnythingIntegration lookupAnything;
     private readonly Func<ClickToMove> getMovement;
@@ -82,12 +83,13 @@ internal sealed partial class WindowManager
 
     internal WindowManager(ModConfig config, Func<bool> isVisible, Action<Exception> onDrawFailed,
         Action saveConfig, Action<Exception> onTransferFailed, LookupAnythingIntegration lookupAnything,
-        Func<ClickToMove> getMovement)
+        Func<ClickToMove> getMovement, Action<PelicomEdge> setPelicomPosition)
     {
         this.config = config;
         this.isVisible = isVisible;
         this.onDrawFailed = onDrawFailed;
         this.saveConfig = saveConfig;
+        this.setPelicomPosition = setPelicomPosition;
         this.onTransferFailed = onTransferFailed;
         this.lookupAnything = lookupAnything;
         this.getMovement = getMovement;
@@ -95,7 +97,7 @@ internal sealed partial class WindowManager
 
     internal void OpenOverview() => Open(OverviewWindow.WindowId, () => new OverviewWindow(config, saveConfig, lookupAnything, getMovement, FocusWorld));
     internal void OpenMail() => Open(MailWindow.WindowId, () => new MailWindow());
-    internal void OpenOptions() => Open(OptionsWindow.WindowId, () => new OptionsWindow());
+    internal void OpenOptions() => Open(OptionsWindow.WindowId, () => new OptionsWindow(config, saveConfig, setPelicomPosition));
     internal void OpenJournal()
     {
         Open(JournalWindow.WindowId, () => new JournalWindow());

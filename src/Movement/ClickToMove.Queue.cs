@@ -15,16 +15,35 @@ partial class ClickToMove
             : repeatTool != null ? RepeatDisplayTile()
             : toolRequest?.Tile() ?? arrivedInteractTile;
         if (active is { } head)
-            list.Add(new QueueIndicator(head, QueuePalette[0], QueueAnimal(interactRequest ?? toolRequest ?? arrivedInteractRequest)));
+            list.Add(new QueueIndicator(head, QueueColor(0), QueueAnimal(interactRequest ?? toolRequest ?? arrivedInteractRequest)));
         foreach (QueuedStep step in pending)
         {
             Point tile = StepDisplayTile(step);
-            int index = Math.Min(list.Count, QueuePalette.Length - 1);
-            list.Add(new QueueIndicator(tile, QueuePalette[index], QueueAnimal(step.Request)));
-            if (list.Count >= MaxQueued)
-                break;
+            list.Add(new QueueIndicator(tile, QueueColor(list.Count), QueueAnimal(step.Request)));
         }
         return list;
+    }
+
+    // Nearby hues draw a continuous rainbow as a stroke grows. Keep the hue step
+    // fixed so appending targets doesn't recolor the existing queue; wrap smoothly.
+    internal static Color QueueColor(int index)
+    {
+        float hue = (0.5f + index % 30 / 30f) % 1f;
+        float sector = hue * 6f;
+        const float high = 0.95f;
+        const float low = high * (1f - 0.65f);
+        float rising = low + (high - low) * (sector - MathF.Floor(sector));
+        float falling = high - (rising - low);
+        (float r, float g, float b) = (int)sector switch
+        {
+            0 => (high, rising, low),
+            1 => (falling, high, low),
+            2 => (low, high, rising),
+            3 => (low, falling, high),
+            4 => (rising, low, high),
+            _ => (high, low, falling)
+        };
+        return new Color((int)MathF.Round(r * 255), (int)MathF.Round(g * 255), (int)MathF.Round(b * 255));
     }
 
     private static Character? QueueAnimal(InteractRequest? request)
@@ -85,7 +104,7 @@ partial class ClickToMove
                 return StartInteract(step.Request, step.Clicked);
             return Start(step.Clicked);
         }
-        if (TotalCount >= MaxQueued)
+        if (!extendedQueue() && TotalCount >= MaxQueued)
         {
             LastDebug = $"Enqueue rejected (full): total={TotalCount} click={step.Clicked}";
             Game1.playSound("cancel");
@@ -222,7 +241,7 @@ partial class ClickToMove
         return EnqueueStep(new QueuedStep(clicked, request.Move, request, null, here, Game1.stats.DaysPlayed), startImmediately);
     }
 
-    /// <summary>Append a whole overview batch in optimal walking order. Existing work
+    /// <summary>Append a whole overview batch in planned walking order. Existing work
     /// retains its order; route optimization begins at its projected final endpoint.</summary>
     internal bool EnqueueInteractions(IReadOnlyList<InteractRequest> requests)
     {
@@ -243,7 +262,7 @@ partial class ClickToMove
         if (batch.Count == 0)
             return true;
         // Reject the whole batch rather than silently dropping selected targets.
-        if (batch.Count > MaxQueued - TotalCount)
+        if (!extendedQueue() && batch.Count > MaxQueued - TotalCount)
         {
             Game1.playSound("cancel");
             return false;
@@ -293,7 +312,7 @@ partial class ClickToMove
             pending.Enqueue(new QueuedStep(request.Tile(), request.Move, request, null,
                 here, Game1.stats.DaysPlayed) { PlannedTile = stop.Tile });
         }
-        LastDebug = $"Queued optimal batch: requested={batch.Count} reachable={route.Count} total={TotalCount}";
+        LastDebug = $"Queued planned batch: requested={batch.Count} reachable={route.Count} total={TotalCount}";
         Game1.playSound("smallSelect");
         return true;
     }

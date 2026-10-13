@@ -173,7 +173,7 @@ internal sealed class TreeView
             if (node.Children.Count > 0)
             {
                 string chevron = IsExpanded(node) ? "v" : ">";
-                UiText.Draw(batch, chevron, new Vector2(chevronX, row.Y + (row.Height - Game1.smallFont.MeasureString(chevron).Y * config.FontScale) / 2), color, config);
+                UiText.Draw(batch, chevron, new Vector2(chevronX, row.Y + (row.Height - UiText.Measure(chevron).Y * config.FontScale) / 2), color, config);
                 textX += ChevronWidth;
             }
             // Leaf nodes take the full row, so roots without children render as a flat list.
@@ -182,7 +182,7 @@ internal sealed class TreeView
             if (node.IsComplete)
             {
                 string fitted = UiText.Fit(node.Label, Math.Max(0, labelBounds.Width - Padding * 2 - 1), config.FontScale);
-                Vector2 size = Game1.smallFont.MeasureString(fitted) * config.FontScale;
+                Vector2 size = UiText.Measure(fitted) * config.FontScale;
                 if (fitted.Length > 0 && size.X > 0)
                 {
                     float y = labelBounds.Y + (labelBounds.Height - 1) / 2f;
@@ -193,7 +193,7 @@ internal sealed class TreeView
         if (visible.Count == 0)
         {
             emptyText = UiText.Fit(emptyText, Math.Max(0, RowsBounds.Width - 1), config.FontScale);
-            Vector2 size = Game1.smallFont.MeasureString(emptyText) * config.FontScale;
+            Vector2 size = UiText.Measure(emptyText) * config.FontScale;
             if (emptyText.Length > 0 && size.Y + 1 <= RowsBounds.Height)
                 UiText.Draw(batch, emptyText, new Vector2(RowsBounds.X + (RowsBounds.Width - size.X) / 2,
                     RowsBounds.Y + (RowsBounds.Height - size.Y) / 2), UiStyle.Muted, config);

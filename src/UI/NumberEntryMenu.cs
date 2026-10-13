@@ -141,7 +141,7 @@ internal sealed class NumberEntryMenu : IClickableMenu
     {
         batch.Draw(Game1.staminaRect, button, UiStyle.Border * (config.Opacity * (enabled && button.Contains(cursor) ? 1f : 0.45f)));
         UiStyle.DrawBorder(batch, button, config.Opacity);
-        Vector2 size = Game1.smallFont.MeasureString(text) * config.FontScale;
+        Vector2 size = UiText.Measure(text) * config.FontScale;
         UiText.Draw(batch, text, new Vector2(button.Center.X - size.X / 2, button.Center.Y - size.Y / 2),
             enabled ? UiStyle.Primary : UiStyle.Muted, config);
     }

@@ -22,7 +22,8 @@ public sealed partial class ModEntry
         // Weapons keep vanilla left-click (swing/aim); never start or continue pathfinding while armed.
         && Game1.player.CurrentTool is not MeleeWeapon && Game1.player.CurrentTool is not Slingshot;
 
-    private bool CanClickToMove => CanQueueClickToMove && Context.CanPlayerMove && !Game1.player.UsingTool
+    private bool CanClickToMove => CanQueueClickToMove && !boxSelectDrag.Value.IsActive
+        && Context.CanPlayerMove && !Game1.player.UsingTool
         && !Game1.player.FarmerSprite.PauseForSingleAnimation;
 
     // Crop harvesting sets CanMove=false until its pickup animation finishes.
@@ -95,6 +96,7 @@ public sealed partial class ModEntry
     private void OnClickToMoveFailed(Exception ex)
     {
         machineCollectDrag.Value.Reset();
+        boxSelectDrag.Value.Reset();
         rockMiningDrag.Value.Reset();
         animalHarvestDrag.Value.Reset();
         clickToMove.Value.Cancel();

@@ -44,7 +44,7 @@ partial class BundlesWindow : OsWindow
         if (string.IsNullOrEmpty(fitted))
             return;
         Vector2 size;
-        try { size = Game1.smallFont.MeasureString(fitted) * config.FontScale; }
+        try { size = UiText.Measure(fitted) * config.FontScale; }
         catch { return; }
         if (size.X <= 0)
             return;

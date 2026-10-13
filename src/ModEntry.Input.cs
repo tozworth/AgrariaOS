@@ -26,6 +26,7 @@ partial class ModEntry : Mod
         if (e.Button is not (SButton.LeftControl or SButton.RightControl or SButton.LeftAlt or SButton.RightAlt))
         {
             machineCollectDrag.Value.Reset();
+            boxSelectDrag.Value.Reset();
             rockMiningDrag.Value.Reset();
             animalHarvestDrag.Value.Reset();
         }
@@ -48,7 +49,16 @@ partial class ModEntry : Mod
         {
             Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
             bool leftClick = e.Button == SButton.MouseLeft;
-            if (windowManager.Value.ReceiveClick(cursor, leftClick, Helper.Input))
+            if (windowManager.Value.ReceiveClick(cursor, leftClick, Helper.Input, () =>
+            {
+                if (Game1.IsChatting || !pelicom.Value.isWithinBounds(cursor.X, cursor.Y))
+                    return false;
+                if (leftClick)
+                    pelicom.Value.ReceivePress(cursor);
+                else
+                    pelicom.Value.receiveRightClick(cursor.X, cursor.Y);
+                return true;
+            }))
             {
                 Helper.Input.Suppress(e.Button);
                 return;
@@ -62,15 +72,6 @@ partial class ModEntry : Mod
                     windowManager.Value.ShowContextMenu(cursor,
                         statusReadoutRenderer.Value.GetContextMenuItems(config, () => Helper.WriteConfig(config)),
                         title: "Status readout", isValid: () => UsePelicom && pelicom.Value.IsInteractive);
-                Helper.Input.Suppress(e.Button);
-                return;
-            }
-            if (!Game1.IsChatting && pelicom.Value.isWithinBounds(cursor.X, cursor.Y))
-            {
-                if (leftClick)
-                    pelicom.Value.ReceivePress(cursor);
-                else
-                    pelicom.Value.receiveRightClick(cursor.X, cursor.Y);
                 Helper.Input.Suppress(e.Button);
                 return;
             }
@@ -148,6 +149,12 @@ partial class ModEntry : Mod
             {
                 Vector2 pixel = e.Cursor.AbsolutePixels;
                 Point tile = new((int)MathF.Floor(pixel.X / 64), (int)MathF.Floor(pixel.Y / 64));
+                if (CanSelectCollections && config.RightClickDrag == RightClickDragMode.BoxSelect
+                    && TryBeginBoxSelectDrag(pixel, tile))
+                {
+                    Helper.Input.Suppress(e.Button);
+                    return;
+                }
                 if ((CanSelectCollections && TryBeginMachineCollectDrag(pixel, tile))
                     || ((CanClickToMove || CanAppendToQueue) && TryStartRightClickInteract(tile)))
                     Helper.Input.Suppress(e.Button);

@@ -48,7 +48,7 @@ partial class NotesWindow : OsWindow
             Rectangle textBounds = new(check.Right + 6, row.Y, Math.Max(0, delete.X - check.Right - 6), row.Height);
             Color color = item.Done ? UiStyle.Muted : UiStyle.Primary;
             string fitted = UiText.Fit(item.Text, Math.Max(0, textBounds.Width - Padding * 2 - 1), config.FontScale);
-            Vector2 size = Game1.smallFont.MeasureString(fitted) * config.FontScale;
+            Vector2 size = UiText.Measure(fitted) * config.FontScale;
             if (!string.IsNullOrEmpty(fitted) && size.Y + 1 <= textBounds.Height)
             {
                 Vector2 position = new(textBounds.X + Padding, textBounds.Y + (textBounds.Height - size.Y) / 2);
@@ -63,7 +63,7 @@ partial class NotesWindow : OsWindow
             if (hovered)
             {
                 string glyph = "X";
-                Vector2 glyphSize = Game1.smallFont.MeasureString(glyph) * config.FontScale;
+                Vector2 glyphSize = UiText.Measure(glyph) * config.FontScale;
                 UiText.Draw(batch, glyph, new Vector2(delete.Center.X - glyphSize.X / 2,
                     delete.Center.Y - glyphSize.Y / 2),
                     delete.Contains(cursor) ? UiStyle.Primary : UiStyle.Muted, config);

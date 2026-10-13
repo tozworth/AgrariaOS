@@ -133,7 +133,7 @@ partial class MiningLedgerWindow : OsWindow
         float width = 0;
         foreach (var entry in entries)
         {
-            float entryWidth = Game1.smallFont.MeasureString(entry.Text).X * config.FontScale;
+            float entryWidth = UiText.Measure(entry.Text).X * config.FontScale;
             if (entry.Chip.HasValue)
                 entryWidth += 11;
             width = Math.Max(width, entryWidth);
@@ -159,7 +159,7 @@ partial class MiningLedgerWindow : OsWindow
                     (int)(rowY + (lineHeight - 8) / 2), 8, 8), entry.Chip.Value * config.Opacity);
                 textX += 11;
             }
-            Vector2 size = Game1.smallFont.MeasureString(entry.Text) * config.FontScale;
+            Vector2 size = UiText.Measure(entry.Text) * config.FontScale;
             UiText.Draw(batch, entry.Text, new Vector2(textX, rowY + (lineHeight - size.Y) / 2),
                 entry.Color, config);
         }
@@ -169,7 +169,7 @@ partial class MiningLedgerWindow : OsWindow
     {
         if (max <= 0)
         {
-            Vector2 size = Game1.smallFont.MeasureString("0") * config.FontScale;
+            Vector2 size = UiText.Measure("0") * config.FontScale;
             UiText.Draw(batch, "0", new Vector2(plot.X - 4 - size.X, plot.Bottom - size.Y), UiStyle.Muted, config);
             return;
         }
@@ -180,7 +180,7 @@ partial class MiningLedgerWindow : OsWindow
         for (int i = 0; i < labels.Length; i++)
         {
             string label = UiText.Fit(labels[i], labelWidth - 4, config.FontScale);
-            Vector2 size = Game1.smallFont.MeasureString(label) * config.FontScale;
+            Vector2 size = UiText.Measure(label) * config.FontScale;
             float y = plot.Y + plot.Height * fractions[i] - size.Y / 2;
             if (i == 0)
                 y = Math.Max(plot.Y - size.Y / 2, y);
@@ -196,7 +196,7 @@ partial class MiningLedgerWindow : OsWindow
         foreach (int bucket in LabeledBuckets)
         {
             string label = HourLabel(bucket);
-            Vector2 size = Game1.smallFont.MeasureString(label) * config.FontScale;
+            Vector2 size = UiText.Measure(label) * config.FontScale;
             float x = plot.X + (bucket + 0.5f) * bucketWidth - size.X / 2;
             x = Math.Clamp(x, plot.X, Math.Max(plot.X, plot.Right - size.X));
             UiText.Draw(batch, label, new Vector2(x, plot.Bottom + 2), UiStyle.Muted, config);

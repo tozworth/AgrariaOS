@@ -26,18 +26,10 @@ internal sealed partial class ClickToMove
     internal const int MaxQueued = 9;
     private const int MaxSwingsPerTool = 30;
 
-    internal static readonly Color[] QueuePalette =
-    {
-        new(93, 214, 221),   // 0 cyan (current target)
-        new(255, 210, 60),   // 1 yellow
-        new(255, 140, 40),   // 2 orange
-        new(120, 220, 80),   // 3 green
-        new(255, 110, 180),  // 4 pink
-        new(170, 130, 255),  // 5 purple
-        new(255, 90, 80),    // 6 red
-        new(110, 170, 255),  // 7 blue
-        new(230, 230, 230),  // 8 white
-    };
+    private readonly Func<bool> extendedQueue;
+
+    internal ClickToMove(Func<bool>? extendedQueue = null)
+        => this.extendedQueue = extendedQueue ?? (() => false);
 
     private Farmer? farmer;
     private GameLocation? location;

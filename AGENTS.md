@@ -19,20 +19,21 @@ Options uses vanilla's localized headers and setting actions in a category tree 
 
 ## Inspect the game code
 
-Use ILSpy against the locally installed DLLs to verify signatures and behavior instead of guessing from old examples. Keep all decompiled code local and ignored; don't commit or package it.
+Use the cached full ILSpy decompilation of the installed DLLs to verify signatures and behavior instead of guessing from old examples. Keep all decompiled code local in the gitignored `.artifacts/decompiled/`; don't commit or package it. Reuse the full cache whenever vanilla grounding is needed, rather than decompiling each type again.
 
-Install the CLI once in this repo, then decompile a specific type:
+Create or validate the cache with the helper (PowerShell 7; `pwsh ./decompile.ps1` on Linux). It installs ILSpy locally if needed, decompiles the game and game-data assemblies into one file per type, and records each installed DLL's SHA-256 and file version in `.cache.json`. Unchanged DLLs skip decompilation; game updates rebuild only the changed assembly. Pass `-IncludeSmapi` when SMAPI internals are needed or `-Force` to regenerate a cache.
 
 ```powershell
-dotnet tool install ilspycmd --tool-path .artifacts/tools --allow-roll-forward
 $stardewPath = 'C:\Program Files (x86)\Steam\steamapps\common\Stardew Valley'
-.\.artifacts\tools\ilspycmd.exe -t StardewValley.Menus.DayTimeMoneyBox "$stardewPath\Stardew Valley.dll" -o .artifacts/decompiled
-rg -n 'draw\(|updatePosition|receiveLeftClick|isWithinBounds' .artifacts/decompiled
+.\decompile.ps1 -GamePath $stardewPath
+rg -n 'draw\(|updatePosition|receiveLeftClick|isWithinBounds' .artifacts/decompiled/stardew/StardewValley/Menus/DayTimeMoneyBox.cs
 ```
+
+Before relying on a cache in a new session or after an installation change, run the helper against the active game folder to check its hashes. Search `.artifacts/decompiled/stardew/` for vanilla behavior and `.artifacts/decompiled/game-data/` for data schemas. Don't use the older loose `*.decompiled.cs` files as authoritative without verifying their source DLL; those predate the tracked full cache.
 
 Other useful types: `StardewValley.Game1` for render/input call sites, `StardewValley.GameLocation` for location/weather APIs, and `StardewValley.Locations.MineShaft` for floor/area handling. Skull floors use internal levels above 120; the quarry's special level is 77377, so check mine area before interpreting depth.
 
-For SMAPI internals, use the same command against `StardewModdingAPI.dll`; `StardewModdingAPI.Framework.SGame` and `.SCore` show render-event routing. `ilspycmd.exe -l c <dll>` lists class names when needed. Decompile relevant types, then use `rg` and focused reads rather than dumping entire assemblies into context.
+For SMAPI internals, run the helper with `-IncludeSmapi` and search `.artifacts/decompiled/smapi/`; `StardewModdingAPI.Framework.SGame` and `.SCore` show render-event routing. Use `rg` and focused reads of the cached files rather than dumping entire assemblies into context. Direct per-type or per-member decompilation remains a fallback for missing assemblies, a decompiler issue, or inspecting IL.
 
 Read both the method and its callers before patching. For rendering, check UI versus world coordinates, scaling, render targets, SpriteBatch lifetime and sampler state. For interactions, inspect hit boxes and vanilla actions. Prefer public properties over raw net fields and narrow Harmony patches over replacing broad game systems.
 

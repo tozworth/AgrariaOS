@@ -35,10 +35,7 @@ partial class Pelicom : IClickableMenu
             CancelPress();
             showContextMenu(new Point(x, y), new[]
             {
-                new ContextMenuItem("Auto-hide", () => autoHideChecked = !autoHideChecked, autoHideChecked),
-                new ContextMenuItem("Reset icon order", () => ResetOrder()),
-                new ContextMenuItem("Position", Children: Enum.GetValues<PelicomEdge>().Select(edge =>
-                    new ContextMenuItem(edge.ToString(), () => SetPosition(edge), GetPosition(config) == edge)).ToArray())
+                new ContextMenuItem("Reset icon order", () => ResetOrder())
             });
         }
     }
@@ -119,8 +116,9 @@ partial class Pelicom : IClickableMenu
         return true;
     }
 
-    internal void Update(IInputHelper input)
+    internal void Update(IInputHelper input, bool contextMenuOpen)
     {
+        UpdateAutoHide(input, contextMenuOpen);
         if (!pressedOnStrip)
             return;
         if (!IsInteractive)
@@ -160,6 +158,23 @@ partial class Pelicom : IClickableMenu
             dragging = true;
         }
         UpdateDropPosition();
+    }
+
+    private void UpdateAutoHide(IInputHelper input, bool contextMenuOpen)
+    {
+        if (!IsInteractive)
+        {
+            autoHide.Reset();
+            return;
+        }
+        Point cursor = new(Game1.getMouseX(ui_scale: true), Game1.getMouseY(ui_scale: true));
+        // A window resize/drag or world press reaching the edge must not summon the rail.
+        bool outsidePress = !pressedOnStrip && (input.IsDown(SButton.MouseLeft) || input.IsSuppressed(SButton.MouseLeft)
+            || input.IsDown(SButton.MouseRight) || input.IsSuppressed(SButton.MouseRight));
+        bool hover = !outsidePress && Game1.game1.IsActiveNoOverlay && !Game1.IsChatting
+            && (GetRevealBounds().Contains(cursor) || drawnBounds.Contains(cursor) || pendingTooltip.Contains(cursor));
+        autoHide.Update(Game1.currentGameTime.ElapsedGameTime.TotalSeconds, config.PelicomAutoHide,
+            hover || pressedOnStrip || contextMenuOpen);
     }
 
     private void CancelPress()

@@ -74,6 +74,13 @@ partial class WindowManager
             return false;
         if (key is Keys.Escape or Keys.Tab)
             ClearKeyboardFocus();
+        else if (keyboardWindow!.KeyboardSubscriber is TextEntry entry)
+        {
+            bool control = IsHeld(input, SButton.LeftControl) || IsHeld(input, SButton.RightControl);
+            bool shift = IsHeld(input, SButton.LeftShift) || IsHeld(input, SButton.RightShift);
+            if (!control || !entry.ReceiveShortcut(key))
+                entry.Navigate(key, extendSelection: shift);
+        }
         else if (key == Keys.V && (input.IsDown(SButton.LeftControl) || input.IsSuppressed(SButton.LeftControl)
             || input.IsDown(SButton.RightControl) || input.IsSuppressed(SButton.RightControl)))
         {

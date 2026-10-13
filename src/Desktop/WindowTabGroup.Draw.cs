@@ -62,7 +62,7 @@ partial class WindowTabGroup
                 try { title = tab.Title; }
                 catch { title = ""; }
                 title = UiText.Fit(title ?? "", Math.Max(0, textBounds.Width - 1), config.FontScale);
-                Vector2 size = Game1.smallFont.MeasureString(title) * config.FontScale;
+                Vector2 size = UiText.Measure(title) * config.FontScale;
                 if (!string.IsNullOrEmpty(title) && size.Y + 1 <= textBounds.Height)
                 {
                     Color color = isActive || isDockPreview ? UiStyle.Primary : UiStyle.Muted;
